@@ -10,6 +10,7 @@ set(LLVM_LINK_COMPONENTS
   InstCombine
   Instrumentation
   MC
+  Mix
   ObjCARCOpts
   ScalarOpts
   Support
