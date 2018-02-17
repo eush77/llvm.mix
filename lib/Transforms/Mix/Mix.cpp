@@ -27,29 +27,35 @@ using namespace llvm;
 
 namespace {
 
-char MixPassID;
-
-class MixPass : public ModulePass {
+class Mix : public ModulePass {
 public:
-  MixPass(): ModulePass(MixPassID) {}
+  static char ID;
+
+  Mix(): ModulePass(ID) {}
 
   bool runOnModule(Module &M) override;
 };
 
+char Mix::ID;
+
 } // end of anonymous namespace
 
-bool MixPass::runOnModule(Module &M) {
+bool Mix::runOnModule(Module &M) {
   for (auto &F: M) {
     DEBUG(dbgs() << "Function @" << F.getName() << '\n');
   }
   return false;
 }
 
+static RegisterPass<Mix> RegisterMixPass(
+  "mix",
+  "Compile staged functions for runtime specialization");
+
 void llvm::addMixPass(PassManagerBuilder &Builder) {
   for (auto EP: { PassManagerBuilder::EP_EnabledOnOptLevel0,
                   PassManagerBuilder::EP_OptimizerLast }) {
     Builder.addExtension(EP, [](const auto &Builder, auto &PM) {
-      PM.add(new MixPass);
+      PM.add(new Mix);
     });
   }
 }
