@@ -22,6 +22,6 @@ class PassManagerBuilder;
 /// Add Mix pass to the appropriate extension point.
 void addMixPass(PassManagerBuilder &Builder);
 
-}
+} // namespace llvm
 
 #endif // LLVM_TRANSFORMS_MIX_H
