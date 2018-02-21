@@ -3978,6 +3978,42 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
       "an array");
     break;
   }
+  case Intrinsic::mix: {
+    Assert((isa<PointerType>(CS.getType()) &&
+            isa<FunctionType>(CS.getType()->getPointerElementType())),
+           "llvm.mix intrinsic returns a function pointer", CS);
+    auto *FT = cast<FunctionType>(CS.getType()->getPointerElementType());
+    Assert(FT->getNumParams() == 0 && !FT->isVarArg(),
+           "llvm.mix intrinsic returns a pointer to a function with no "
+           "parameters",
+           CS);
+    Metadata *FID = cast<MetadataAsValue>(CS.getArgOperand(1))->getMetadata();
+    Assert(isa<MDString>(FID),
+           "function-id argument of llvm.mix intrinsic must be a metadata "
+           "string",
+           CS);
+    Function *F = M.getFunction(cast<MDString>(FID)->getString());
+    Assert(F, "function not found", FID);
+    Assert(!F->isDeclaration(), "function is not defined in the current module",
+           FID);
+    Assert(F->getReturnType() == FT->getReturnType(),
+           "llvm.mix intrinsic returns a pointer to a function with the same "
+           "return type as the source function",
+           CS);
+    Assert(F->isVarArg() ? F->arg_size() <= CS.arg_size() - 2
+                         : F->arg_size() == CS.arg_size() - 2,
+           "llvm.mix intrinsic takes the same number of vararg arguments as "
+           "the source function",
+           CS);
+    Assert(std::equal(F->arg_begin(), F->arg_end(), CS.arg_begin() + 2,
+                      [](const auto &Arg, const auto &Op) {
+                        return Arg.getType() == Op->getType();
+                      }),
+           "llvm.mix intrinsic takes vararg arguments of the same type as "
+           "the source function",
+           CS);
+    break;
+  }
   case Intrinsic::ctlz:  // llvm.ctlz
   case Intrinsic::cttz:  // llvm.cttz
     Assert(isa<ConstantInt>(CS.getArgOperand(1)),

@@ -12368,6 +12368,54 @@ The LLVM exception handling intrinsics (which all start with
 ``llvm.eh.`` prefix), are described in the `LLVM Exception
 Handling <ExceptionHandling.html#format-common-intrinsics>`_ document.
 
+Mixed Execution Intrinsics
+--------------------------
+
+These intrinsics provide access to the Mix runtime for run-time function
+specialization.
+
+'``llvm.mix.*``' Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare void ()* @llvm.mix.p0f_isVoidf(i8* %rt, metadata <function-id>, ...)
+      declare i32 ()* @llvm.mix.p0f_i32f(i8* %rt, metadata <function-id>, ...)
+
+Overview:
+"""""""""
+
+The overloaded '``llvm.mix``' intrinsic calls to the Mix runtime to specialize
+a function specified by ``function-id`` to the rest of the arguments of the
+intrinsic.
+
+Arguments:
+""""""""""
+
+The first argument ``%rt`` must be a pointer to the internal Mix runtime
+instance created and initialized using the LLVM Mix library API.
+
+``<function-id>`` must be a :ref:`metadata string <metadata-string>`
+containing the name of the function to specialize. The function must be
+defined in the current module.
+
+The rest of the arguments must match the types of the parameters of the
+function specified by ``<function-id>``.
+
+Semantics:
+""""""""""
+
+The Mix runtime specializes the function specified by ``<function-id>`` to
+arguments provided as vararg arguments to the intrinsic. The returned value is
+a pointer to specialized function. Specialized function has the same returned
+type as the function specified by ``<function-id>`` and takes no parameters.
+
+The intrinsic is defined for any type of return value, provided it's a pointer
+type to a function with no parameters.
+
 .. _int_trampoline:
 
 Trampoline Intrinsics
