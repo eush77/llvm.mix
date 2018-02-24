@@ -12374,33 +12374,31 @@ Mixed Execution Intrinsics
 These intrinsics provide access to the Mix runtime for run-time function
 specialization.
 
-'``llvm.mix.*``' Intrinsics
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+'``llvm.mix``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Syntax:
 """""""
 
 ::
 
-      declare void ()* @llvm.mix.p0f_isVoidf(i8* %rt, metadata <function-id>, ...)
-      declare i32 ()* @llvm.mix.p0f_i32f(i8* %rt, metadata <function-id>, ...)
+      declare i8* @llvm.mix(i8* %context, metadata <function-id>, ...)
 
 Overview:
 """""""""
 
-The overloaded '``llvm.mix``' intrinsic calls to the Mix runtime to specialize
-a function specified by ``function-id`` to the rest of the arguments of the
-intrinsic.
+Creates a specialized IR module containing the representation of a given
+function.
 
 Arguments:
 """"""""""
 
-The first argument ``%rt`` must be a pointer to the internal Mix runtime
-instance created and initialized using the LLVM Mix library API.
+The argument ``%context`` is a pointer to an ``LLVMContext`` instance to use
+when creating the new IR.
 
-``<function-id>`` must be a :ref:`metadata string <metadata-string>`
+The argument ``<function-id>`` is a :ref:`metadata string <metadata-string>`
 containing the name of the function to specialize. The function must be
-defined in the current module.
+defined in the current translation unit.
 
 The rest of the arguments must match the types of the parameters of the
 function specified by ``<function-id>``.
@@ -12408,13 +12406,10 @@ function specified by ``<function-id>``.
 Semantics:
 """"""""""
 
-The Mix runtime specializes the function specified by ``<function-id>`` to
-arguments provided as vararg arguments to the intrinsic. The returned value is
-a pointer to specialized function. Specialized function has the same returned
-type as the function specified by ``<function-id>`` and takes no parameters.
-
-The intrinsic is defined for any type of return value, provided it's a pointer
-type to a function with no parameters.
+The intrinsic specializes the function specified by ``<function-id>`` to the
+values of vararg parameters of the intrinsic. The returned value is a new IR
+module containing the function named ``<function-id>`` with the same return
+type as the original function but no parameters.
 
 .. _int_trampoline:
 
