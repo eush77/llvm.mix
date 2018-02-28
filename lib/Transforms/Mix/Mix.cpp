@@ -127,6 +127,14 @@ Function *Mix::createSpecializer(Function *F) {
   // Create specializer function.
   auto *SpecF = Function::Create(SpecFT, GlobalValue::PrivateLinkage,
                                  Twine(F->getName()) + ".mix");
+
+  // Name parameters of the specializer.
+  SpecF->arg_begin()->setName("context");
+  for (auto ArgIt = F->arg_begin(), SpecArgIt = SpecF->arg_begin() + 1;
+       ArgIt != F->arg_end(); ++ArgIt, ++SpecArgIt) {
+    SpecArgIt->setName(ArgIt->getName());
+  }
+
   M->getFunctionList().insertAfter(Module::iterator(F), SpecF);
 
   // Create instruction builders.

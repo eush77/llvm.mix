@@ -10,11 +10,11 @@ define void @f(i32 %x) {
   ret void
 }
 
-; CHECK-LABEL: define private i8* @f.mix(i8*, i32)
-; CHECK: [[module:%.+]] = call i8* @LLVMModuleCreateWithNameInContext
-; CHECK: call i8* @LLVMAddFunction(i8* [[module]],
-; CHECK: [[entry:%.+]] = call i8* @LLVMAppendBasicBlockInContext(i8*
-; CHECK: [[builder:%.+]] = call i8* @LLVMCreateBuilderInContext(i8*
+; CHECK: define private i8* @f.mix(i8* [[context:%.+]], i32 %x)
+; CHECK: [[module:%.+]] = call i8* @LLVMModuleCreateWithNameInContext({{.*}}, i8* [[context]])
+; CHECK: [[function:%.+]] = call i8* @LLVMAddFunction(i8* [[module]],
+; CHECK: [[entry:%.+]] = call i8* @LLVMAppendBasicBlockInContext(i8* [[context]], i8* [[function]],
+; CHECK: [[builder:%.+]] = call i8* @LLVMCreateBuilderInContext(i8* [[context]])
 ; CHECK: call void @LLVMPositionBuilderAtEnd(i8* [[builder]], i8* [[entry]])
 ; CHECK: call i8* @LLVMBuildRetVoid(i8* [[builder]])
 ; CHECK: call void @LLVMDisposeBuilder(i8* [[builder]])
