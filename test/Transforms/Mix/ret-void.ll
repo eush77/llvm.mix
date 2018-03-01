@@ -10,20 +10,20 @@ define void @f(i32 %x) {
   ret void
 }
 
-; CHECK: define private i8* @f.mix(i8* [[context:%.+]], i32 %x)
-; CHECK: [[module:%.+]] = call i8* @LLVMModuleCreateWithNameInContext({{.*}}, i8* [[context]])
-; CHECK: [[function:%.+]] = call i8* @LLVMAddFunction(i8* [[module]],
-; CHECK: [[entry:%.+]] = call i8* @LLVMAppendBasicBlockInContext(i8* [[context]], i8* [[function]],
-; CHECK: [[builder:%.+]] = call i8* @LLVMCreateBuilderInContext(i8* [[context]])
-; CHECK: call void @LLVMPositionBuilderAtEnd(i8* [[builder]], i8* [[entry]])
-; CHECK: call i8* @LLVMBuildRetVoid(i8* [[builder]])
-; CHECK: call void @LLVMDisposeBuilder(i8* [[builder]])
-; CHECK: ret i8* [[module]]
+; CHECK: define private %struct.LLVMOpaqueModule* @f.mix(%struct.LLVMOpaqueContext* [[context:%.+]], i32 %x)
+; CHECK: [[module:%.+]] = call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext({{.*}}, %struct.LLVMOpaqueContext* [[context]])
+; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction(%struct.LLVMOpaqueModule* [[module]],
+; CHECK: [[entry:%.+]] = call %struct.LLVMOpaqueBasicBlock* @LLVMAppendBasicBlockInContext(%struct.LLVMOpaqueContext* [[context]], %struct.LLVMOpaqueValue* [[function]],
+; CHECK: [[builder:%.+]] = call %struct.LLVMOpaqueBuilder* @LLVMCreateBuilderInContext(%struct.LLVMOpaqueContext* [[context]])
+; CHECK: call void @LLVMPositionBuilderAtEnd(%struct.LLVMOpaqueBuilder* [[builder]], %struct.LLVMOpaqueBasicBlock* [[entry]])
+; CHECK: call %struct.LLVMOpaqueValue* @LLVMBuildRetVoid(%struct.LLVMOpaqueBuilder* [[builder]])
+; CHECK: call void @LLVMDisposeBuilder(%struct.LLVMOpaqueBuilder* [[builder]])
+; CHECK: ret %struct.LLVMOpaqueModule* [[module]]
 
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  ; CHECK: %m = call i8* @f.mix(i8* %c, i32 1)
+  ; CHECK: call %struct.LLVMOpaqueModule* @f.mix({{.*}}, i32 1)
   %m = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"f", i32 1)
   call void @LLVMDumpModule(i8* %m)
   call void @LLVMContextDispose(i8* %c)

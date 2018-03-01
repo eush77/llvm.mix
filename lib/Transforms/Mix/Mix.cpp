@@ -13,6 +13,7 @@
 
 #include "llvm/Transforms/Mix.h"
 #include "StagedIRBuilder.h"
+#include "Types.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
@@ -90,16 +91,20 @@ bool Mix::runOnModule(Module &M) {
 
         auto *Specializer = createSpecializer(
             resolveFunctionId(cast<MetadataAsValue>(Intr->getArgOperand(1))));
+        auto *StagedContext = new BitCastInst(
+            Intr->getArgOperand(0), mix::getContextPtrTy(M.getContext()),
+            Intr->getArgOperand(0)->getName(), Intr);
 
         SmallVector<Value *, 8> Args;
-        Args.push_back(Intr->getArgOperand(0));
+        Args.push_back(StagedContext);
         Args.append(std::next(std::next(Intr->arg_begin())), Intr->arg_end());
 
-        auto *SpecializedFunction =
-            CallInst::Create(Specializer, Args, "", Intr);
-        SpecializedFunction->takeName(Intr);
+        auto *StagedModule =
+            new BitCastInst(CallInst::Create(Specializer, Args, "", Intr),
+                            Intr->getType(), "", Intr);
+        StagedModule->takeName(Intr);
 
-        Intr->replaceAllUsesWith(SpecializedFunction);
+        Intr->replaceAllUsesWith(StagedModule);
         BBI = Intr->eraseFromParent();
       }
     }
@@ -118,10 +123,10 @@ Function *Mix::createSpecializer(Function *F) {
   // Create function type of the specializer.
   {
     SmallVector<Type *, 8> Params;
-    Params.push_back(Type::getInt8PtrTy(M->getContext()));
+    Params.push_back(mix::getContextPtrTy(M->getContext()));
     Params.append(FT->param_begin(), FT->param_end());
 
-    SpecFT = FunctionType::get(Type::getInt8PtrTy(M->getContext()), Params,
+    SpecFT = FunctionType::get(mix::getModulePtrTy(M->getContext()), Params,
                                FT->isVarArg());
   }
 
@@ -140,7 +145,8 @@ Function *Mix::createSpecializer(Function *F) {
 
   // Create instruction builders.
   IRBuilder<> Builder(BasicBlock::Create(M->getContext(), "", SpecF));
-  StagedIRBuilder<decltype(Builder)> StagedBuilder(Builder, SpecF->arg_begin());
+  mix::StagedIRBuilder<decltype(Builder)> StagedBuilder(Builder,
+                                                        SpecF->arg_begin());
 
   // Create definitions for code generator in the entry block.
   auto *StagedModule =

@@ -15,6 +15,8 @@
 #ifndef LLVM_LIB_TRANSFORMS_MIX_STAGEDIRBUILDER_H
 #define LLVM_LIB_TRANSFORMS_MIX_STAGEDIRBUILDER_H
 
+#include "Types.h"
+
 #include "llvm-c/Core.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -33,6 +35,8 @@ namespace llvm {
 
 class Constant;
 class Value;
+
+namespace mix {
 
 // This class provides a wrapper around IRBuilder to build code that builds
 // other code when executed, using LLVM library API.
@@ -69,13 +73,12 @@ public:
 private:
   constexpr static const char *GlobalPrefix = "mix.name";
 
-  Type *getContextPtrTy() { return B.getInt8PtrTy(); }
-  Type *getModulePtrTy() { return B.getInt8PtrTy(); }
-  Type *getFunctionPtrTy() { return B.getInt8PtrTy(); }
-  Type *getBasicBlockPtrTy() { return B.getInt8PtrTy(); }
-  Type *getBuilderPtrTy() { return B.getInt8PtrTy(); }
-  Type *getTypePtrTy() { return B.getInt8PtrTy(); }
-  Type *getValuePtrTy() { return B.getInt8PtrTy(); }
+  Type *getBasicBlockPtrTy() { return mix::getBasicBlockPtrTy(B.getContext()); }
+  Type *getBuilderPtrTy() { return mix::getBuilderPtrTy(B.getContext()); }
+  Type *getContextPtrTy() { return mix::getContextPtrTy(B.getContext()); }
+  Type *getModulePtrTy() { return mix::getModulePtrTy(B.getContext()); }
+  Type *getTypePtrTy() { return mix::getTypePtrTy(B.getContext()); }
+  Type *getValuePtrTy() { return mix::getValuePtrTy(B.getContext()); }
 
   Constant *getAPIFunction(StringRef Name, Type *Result,
                            ArrayRef<Type *> Params) {
@@ -103,7 +106,7 @@ Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     FunctionType *Type, GlobalValue::LinkageTypes Linkage, const Twine &Name,
     Value *StagedModule, const Twine &InstName) {
   auto *F = B.CreateCall(
-      getAPIFunction("LLVMAddFunction", getFunctionPtrTy(),
+      getAPIFunction("LLVMAddFunction", getValuePtrTy(),
                      {getModulePtrTy(), B.getInt8PtrTy(), getTypePtrTy()}),
       {StagedModule, B.CreateGlobalStringPtr(Name.str(), GlobalPrefix),
        createType(Type)},
@@ -121,7 +124,7 @@ Instruction *StagedIRBuilder<IRBuilder>::createBasicBlock(
     const Twine &Name, Value *StagedFunction, const Twine &InstName) {
   return B.CreateCall(
       getAPIFunction("LLVMAppendBasicBlockInContext", getBasicBlockPtrTy(),
-                     {getContextPtrTy(), getFunctionPtrTy(), B.getInt8PtrTy()}),
+                     {getContextPtrTy(), getValuePtrTy(), B.getInt8PtrTy()}),
       {StagedContext, StagedFunction,
        B.CreateGlobalStringPtr(Name.str(), GlobalPrefix)},
       InstName);
@@ -268,6 +271,8 @@ Instruction *StagedIRBuilder<IRBuilder>::createInstruction(Instruction *Inst) {
       getAPIFunction("LLVMBuildRetVoid", getValuePtrTy(), {getBuilderPtrTy()}),
       {StagedBuilder}, Inst->getName());
 }
+
+} // namespace mix
 
 } // namespace llvm
 

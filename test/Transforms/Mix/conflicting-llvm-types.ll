@@ -10,15 +10,15 @@ define void @f(i32 %x) {
   ret void
 }
 
-; CHECK: define private i8* @f.mix(i8* [[context:%.+]], i32 %x)
-; CHECK: [[module:%.+]] = call i8* bitcast ({{.*}} @LLVMModuleCreateWithNameInContext to i8* (i8*, i8*)*)({{.*}}, i8* [[context]])
-; CHECK: ret i8* [[module]]
+; CHECK: define private %struct.LLVMOpaqueModule* @f.mix(%struct.LLVMOpaqueContext* [[context:%.+]], i32 %x)
+; CHECK: [[module:%.+]] = call %struct.LLVMOpaqueModule* bitcast ({{.*}} @LLVMModuleCreateWithNameInContext to %struct.LLVMOpaqueModule* (i8*, %struct.LLVMOpaqueContext*)*)({{.*}}, %struct.LLVMOpaqueContext* [[context]])
+; CHECK: ret %struct.LLVMOpaqueModule* [[module]]
 
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %context = call %struct.LLVMContext* @LLVMContextCreate()
   %c = bitcast %struct.LLVMContext* %context to i8*
-  ; CHECK: %m = call i8* @f.mix(i8* %c, i32 1)
+  ; CHECK: call %struct.LLVMOpaqueModule* @f.mix({{.*}}, i32 1)
   %m = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"f", i32 1)
   %module = bitcast i8* %m to %struct.Module*
   call void @LLVMDumpModule(%struct.Module* %module)
