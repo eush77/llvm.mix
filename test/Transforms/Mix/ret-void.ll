@@ -1,6 +1,8 @@
 ; RUN: opt -S -mix %s -o - | FileCheck %s --implicit-check-not=define
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
+; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
+; RUN: | opt -verify -disable-output
 
 ; CHECK-LABEL: define void @f(i32 %x)
 ; CHECK-STAGE-LABEL: define void @f()
