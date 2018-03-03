@@ -15,9 +15,11 @@
 #include "StagedIRBuilder.h"
 #include "Types.h"
 
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
@@ -110,7 +112,6 @@ bool Mix::runOnModule(Module &M) {
     }
   }
 
-  DEBUG(dbgs() << '\n');
   return false;
 }
 
@@ -154,17 +155,29 @@ Function *Mix::createSpecializer(Function *F) {
   auto *StagedFunction = StagedBuilder.createFunction(
       FunctionType::get(FT->getReturnType(), false),
       GlobalValue::ExternalLinkage, F->getName(), StagedModule, "function");
-  auto *StagedEntryBlock =
-      StagedBuilder.createBasicBlock("", StagedFunction, "entry");
-  StagedBuilder.createBuilder("builder");
-  StagedBuilder.positionBuilderAtEnd(StagedEntryBlock);
+  StagedBuilder.createBuilder(StagedFunction, "builder");
+
+  SetVector<BasicBlock *> Worklist;
+  Worklist.insert(&F->getEntryBlock());
 
   // Generate code.
-  for (auto &BB : *F) {
-    for (auto &I: BB) {
-      StagedBuilder.createInstruction(&I);
+  for (unsigned BBNum = 0; BBNum < Worklist.size(); ++BBNum) {
+    auto *BB = Worklist[BBNum];
+
+    DEBUG(dbgs() << "  - Visiting %" << BB->getName() << '\n');
+
+    StagedBuilder.positionBuilderAtEnd(StagedBuilder.stage(BB));
+
+    for (auto &I: *BB) {
+      StagedBuilder.stage(&I);
+    }
+
+    for (auto *SuccBB: successors(BB)) {
+      Worklist.insert(SuccBB);
     }
   }
+
+  DEBUG(dbgs() << '\n');
 
   StagedBuilder.disposeBuilder();
   Builder.CreateRet(StagedModule);
