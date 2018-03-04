@@ -23,6 +23,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
@@ -36,6 +37,9 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
+#include <functional>
+#include <unordered_map>
+#include <utility>
 
 namespace llvm {
 
@@ -96,8 +100,12 @@ private:
 
   Instruction *stageBasicBlock(BasicBlock *Block);
   Instruction *stageConstant(Constant *Const, const Twine &InstName = "");
-  Instruction *stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
+  void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
+
+  // Register a callback to be called when the value is staged. If the value
+  // has already been staged, call it immediately.
+  void whenStaged(Value *V, std::function<void(Instruction *)> Callback);
 
   IRBuilder &B;
   Value *StagedContext;
@@ -105,6 +113,8 @@ private:
   Instruction *StagedFunction = nullptr;
   DenseMap<Type *, Instruction *> StagedTypes;
   DenseMap<Value *, Instruction *> StagedValues;
+  std::unordered_multimap<Value *, std::function<void(Instruction *)>>
+      StageCallbacks;
 };
 
 template <typename IRBuilder>
@@ -306,35 +316,33 @@ Instruction *StagedIRBuilder<IRBuilder>::stageConstant(Constant *Const,
 }
 
 // Stage list of incoming values and add them to the already staged Phi node.
+// This can't always happen right away because incoming values may not be
+// ready yet, so add hooks to build the list when they will be.
 template <typename IRBuilder>
-Instruction *
-StagedIRBuilder<IRBuilder>::stageIncomingList(PHINode *Phi,
-                                              Instruction *StagedPhi) {
-  auto *IncomingValues =
-      B.CreateAlloca(getValuePtrTy(), B.getInt32(Phi->getNumIncomingValues()));
+void StagedIRBuilder<IRBuilder>::stageIncomingList(PHINode *Phi,
+                                                   Instruction *StagedPhi) {
+  auto *IncomingValueAlloca = B.CreateAlloca(getValuePtrTy(), B.getInt32(1));
+  auto *IncomingBlockAlloca =
+      B.CreateAlloca(getBasicBlockPtrTy(), B.getInt32(1));
 
   for (unsigned IncomingNum = 0; IncomingNum < Phi->getNumIncomingValues();
        ++IncomingNum) {
-    B.CreateStore(stage(Phi->getIncomingValue(IncomingNum)),
-                  B.CreateGEP(IncomingValues, B.getInt32(IncomingNum)));
+    whenStaged(Phi->getIncomingValue(IncomingNum),
+               [=](Instruction *StagedIncomingValue) {
+                 B.CreateStore(StagedIncomingValue, IncomingValueAlloca);
+                 B.CreateStore(stage(Phi->getIncomingBlock(IncomingNum)),
+                               IncomingBlockAlloca);
+
+                 B.CreateCall(getAPIFunction(
+                                  "LLVMAddIncoming", B.getVoidTy(),
+                                  {getValuePtrTy(),
+                                   PointerType::getUnqual(getValuePtrTy()),
+                                   PointerType::getUnqual(getBasicBlockPtrTy()),
+                                   B.getInt32Ty()}),
+                              {StagedPhi, IncomingValueAlloca,
+                               IncomingBlockAlloca, B.getInt32(1)});
+               });
   }
-
-  auto *IncomingBlocks = B.CreateAlloca(
-      getBasicBlockPtrTy(), B.getInt32(Phi->getNumIncomingValues()));
-
-  for (unsigned IncomingNum = 0; IncomingNum < Phi->getNumIncomingValues();
-       ++IncomingNum) {
-    B.CreateStore(stage(Phi->getIncomingBlock(IncomingNum)),
-                  B.CreateGEP(IncomingBlocks, B.getInt32(IncomingNum)));
-  }
-
-  return B.CreateCall(
-      getAPIFunction("LLVMAddIncoming", B.getVoidTy(),
-                     {getValuePtrTy(), PointerType::getUnqual(getValuePtrTy()),
-                      PointerType::getUnqual(getBasicBlockPtrTy()),
-                      B.getInt32Ty()}),
-      {StagedPhi, IncomingValues, IncomingBlocks,
-       B.getInt32(Phi->getNumIncomingValues())});
 }
 
 template <typename IRBuilder>
@@ -488,7 +496,24 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
   assert(StagedV && "Unsupported value kind");
 
   StagedValues[V] = StagedV;
+
+  // Call stage callbacks for the value.
+  for (auto &SCPair: make_range(StageCallbacks.equal_range(V))) {
+    SCPair.second(StagedV);
+  }
+  StageCallbacks.erase(V);
+
   return StagedV;
+}
+
+template <typename IRBuilder>
+void StagedIRBuilder<IRBuilder>::whenStaged(
+    Value *V, std::function<void(Instruction *)> Callback) {
+  if (Instruction *StagedV = StagedValues.lookup(V)) {
+    Callback(StagedV);
+  } else {
+    StageCallbacks.insert(std::make_pair(V, Callback));
+  }
 }
 
 } // namespace mix
