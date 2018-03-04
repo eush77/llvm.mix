@@ -86,10 +86,19 @@ public:
 
 private:
   Type *getBasicBlockPtrTy() { return mix::getBasicBlockPtrTy(B.getContext()); }
+  Type *getBoolTy() { return mix::getBoolTy(B.getContext()); }
   Type *getBuilderPtrTy() { return mix::getBuilderPtrTy(B.getContext()); }
+  Type *getCharPtrTy() { return mix::getCharPtrTy(B.getContext()); }
   Type *getContextPtrTy() { return mix::getContextPtrTy(B.getContext()); }
+  Type *getIntPredicateTy() { return mix::getIntPredicateTy(B.getContext()); }
+  Type *getLinkageTy() { return mix::getLinkageTy(B.getContext()); }
   Type *getModulePtrTy() { return mix::getModulePtrTy(B.getContext()); }
+  Type *getOpcodeTy() { return mix::getOpcodeTy(B.getContext()); }
   Type *getTypePtrTy() { return mix::getTypePtrTy(B.getContext()); }
+  Type *getUnsignedIntTy() { return mix::getUnsignedIntTy(B.getContext()); }
+  Type *getUnsignedLongLongIntTy() {
+    return mix::getUnsignedLongLongIntTy(B.getContext());
+  }
   Type *getValuePtrTy() { return mix::getValuePtrTy(B.getContext()); }
 
   Constant *getAPIFunction(const Twine &Name, Type *Result,
@@ -122,7 +131,7 @@ Instruction *StagedIRBuilder<IRBuilder>::createModule(const Twine &ModuleId,
                                                       const Twine &InstName) {
   return B.CreateCall(
       getAPIFunction("LLVMModuleCreateWithNameInContext", getModulePtrTy(),
-                     {B.getInt8PtrTy(), getContextPtrTy()}),
+                     {getCharPtrTy(), getContextPtrTy()}),
       {stage(ModuleId.str()), StagedContext},
       InstName);
 }
@@ -133,7 +142,7 @@ Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     Instruction *StagedModule, const Twine &InstName) {
   auto *F = B.CreateCall(
       getAPIFunction("LLVMAddFunction", getValuePtrTy(),
-                     {getModulePtrTy(), B.getInt8PtrTy(), getTypePtrTy()}),
+                     {getModulePtrTy(), getCharPtrTy(), getTypePtrTy()}),
       {StagedModule, stage(Name.str()), stage(Type)},
       InstName);
 
@@ -197,8 +206,8 @@ StagedIRBuilder<IRBuilder>::setLinkage(Value *Global,
   }
 
   return B.CreateCall(getAPIFunction("LLVMSetLinkage", B.getVoidTy(),
-                                     {getValuePtrTy(), B.getInt32Ty()}),
-                      {Global, B.getInt32(CAPILinkage)});
+                                     {getValuePtrTy(), getLinkageTy()}),
+                      {Global, ConstantInt::get(getLinkageTy(), CAPILinkage)});
 }
 
 template <typename IRBuilder>
@@ -255,8 +264,10 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 
     StagedTy =
         B.CreateCall(getAPIFunction("LLVMIntTypeInContext", getTypePtrTy(),
-                                    {getContextPtrTy(), B.getInt32Ty()}),
-                     {StagedContext, B.getInt32(IT->getBitWidth())}, InstName);
+                                    {getContextPtrTy(), getUnsignedIntTy()}),
+                     {StagedContext,
+                      ConstantInt::get(getUnsignedIntTy(), IT->getBitWidth())},
+                     InstName);
     break;
   }
 
@@ -274,9 +285,10 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
     StagedTy = B.CreateCall(
         getAPIFunction("LLVMFunctionType", getTypePtrTy(),
                        {getTypePtrTy(), PointerType::getUnqual(getTypePtrTy()),
-                        B.getInt32Ty(), B.getInt32Ty()}),
+                        getUnsignedIntTy(), getBoolTy()}),
         {stage(FT->getReturnType()), Params,
-         B.getInt32(FT->getNumParams()), B.getInt32(false)},
+         ConstantInt::get(getUnsignedIntTy(), FT->getNumParams()),
+         ConstantInt::get(getBoolTy(), false)},
         InstName);
     break;
   }
@@ -292,7 +304,7 @@ template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageBasicBlock(BasicBlock *Block) {
   return B.CreateCall(
       getAPIFunction("LLVMAppendBasicBlockInContext", getBasicBlockPtrTy(),
-                     {getContextPtrTy(), getValuePtrTy(), B.getInt8PtrTy()}),
+                     {getContextPtrTy(), getValuePtrTy(), getCharPtrTy()}),
       {StagedContext, StagedFunction, stage(Block->getName())},
       Block->getName());
 }
@@ -305,10 +317,12 @@ Instruction *StagedIRBuilder<IRBuilder>::stageConstant(Constant *Const,
            "Unsupported integer width");
 
     return B.CreateCall(
-        getAPIFunction("LLVMConstInt", getValuePtrTy(),
-                       {getTypePtrTy(), B.getInt64Ty(), B.getInt32Ty()}),
-        {stage(Const->getType()), B.getInt64(ConstInt->getZExtValue()),
-         B.getInt32(false)},
+        getAPIFunction(
+            "LLVMConstInt", getValuePtrTy(),
+            {getTypePtrTy(), getUnsignedLongLongIntTy(), getBoolTy()}),
+        {stage(Const->getType()),
+         ConstantInt::get(getUnsignedLongLongIntTy(), ConstInt->getZExtValue()),
+         ConstantInt::get(getBoolTy(), false)},
         InstName);
   }
 
@@ -338,9 +352,10 @@ void StagedIRBuilder<IRBuilder>::stageIncomingList(PHINode *Phi,
                                   {getValuePtrTy(),
                                    PointerType::getUnqual(getValuePtrTy()),
                                    PointerType::getUnqual(getBasicBlockPtrTy()),
-                                   B.getInt32Ty()}),
+                                   getUnsignedIntTy()}),
                               {StagedPhi, IncomingValueAlloca,
-                               IncomingBlockAlloca, B.getInt32(1)});
+                               IncomingBlockAlloca,
+                               ConstantInt::get(getUnsignedIntTy(), 1)});
                });
   }
 }
@@ -366,10 +381,10 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
   if (Inst->isBinaryOp()) {
     LLVMOpcode CAPIOpcode = LLVMGetInstructionOpcode(wrap(Inst));
 
-    pushArg(B.getInt32Ty(), B.getInt32(CAPIOpcode));
+    pushArg(getOpcodeTy(), ConstantInt::get(getOpcodeTy(), CAPIOpcode));
     pushArg(getValuePtrTy(), stage(Inst->getOperand(0)));
     pushArg(getValuePtrTy(), stage(Inst->getOperand(1)));
-    pushArg(B.getInt8PtrTy(), stage(Inst->getName()));
+    pushArg(getCharPtrTy(), stage(Inst->getName()));
     setBuilderName("BinOp");
   } else {
     switch (Inst->getOpcode()) {
@@ -383,7 +398,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       } else {
         setBuilderName("Alloca");
       }
-      pushArg(B.getInt8PtrTy(), stage(Inst->getName()));
+      pushArg(getCharPtrTy(), stage(Inst->getName()));
       break;
     }
 
@@ -405,10 +420,11 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
     case Instruction::ICmp: {
       LLVMIntPredicate CAPIIntPredicate = LLVMGetICmpPredicate(wrap(Inst));
 
-      pushArg(B.getInt32Ty(), B.getInt32(CAPIIntPredicate));
+      pushArg(getIntPredicateTy(),
+              ConstantInt::get(getIntPredicateTy(), CAPIIntPredicate));
       pushArg(getValuePtrTy(), stage(Inst->getOperand(0)));
       pushArg(getValuePtrTy(), stage(Inst->getOperand(1)));
-      pushArg(B.getInt8PtrTy(), stage(Inst->getName()));
+      pushArg(getCharPtrTy(), stage(Inst->getName()));
       setBuilderName("ICmp");
       break;
     }
@@ -417,7 +433,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       auto *Load = cast<LoadInst>(Inst);
 
       pushArg(getValuePtrTy(), stage(Load->getPointerOperand()));
-      pushArg(B.getInt8PtrTy(), stage(Inst->getName()));
+      pushArg(getCharPtrTy(), stage(Inst->getName()));
       setBuilderName("Load");
       break;
     }
@@ -426,7 +442,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       auto *Phi = cast<PHINode>(Inst);
 
       pushArg(getTypePtrTy(), stage(Phi->getType()));
-      pushArg(B.getInt8PtrTy(), stage(Inst->getName()));
+      pushArg(getCharPtrTy(), stage(Inst->getName()));
       setBuilderName("Phi");
       break;
     }
@@ -457,7 +473,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
 
       pushArg(getValuePtrTy(), stage(Trunc->getOperand(0)));
       pushArg(getTypePtrTy(), stage(Trunc->getDestTy()));
-      pushArg(B.getInt8PtrTy(), stage(Inst->getName()));
+      pushArg(getCharPtrTy(), stage(Inst->getName()));
       setBuilderName("Trunc");
       break;
     }

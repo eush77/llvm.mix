@@ -8,7 +8,8 @@
 //===----------------------------------------------------------------------===//
 //
 // This file declares singleton struct type constructors to be used in
-// generated code when referring to IR objects such as contexts, modules, etc.
+// generated code when referring to IR objects such as contexts, modules, etc,
+// as well as other types used in the C API.
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,6 +23,18 @@ class Type;
 
 namespace mix {
 
+// C types.
+Type *getCharPtrTy(LLVMContext &);
+Type *getUnsignedIntTy(LLVMContext &);
+Type *getUnsignedLongLongIntTy(LLVMContext &);
+
+// LLVM-C types.
+Type *getBoolTy(LLVMContext &);
+Type *getIntPredicateTy(LLVMContext &);
+Type *getLinkageTy(LLVMContext &);
+Type *getOpcodeTy(LLVMContext &);
+
+// IR types.
 Type *getBasicBlockPtrTy(LLVMContext &);
 Type *getBuilderPtrTy(LLVMContext &);
 Type *getContextPtrTy(LLVMContext &);
