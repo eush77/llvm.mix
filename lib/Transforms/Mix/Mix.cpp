@@ -75,6 +75,7 @@ bool Mix::runOnModule(Module &M) {
   DEBUG(dbgs() << "---- Mix : " << M.getName() << " ----\n\n");
 
   this->M = &M;
+  bool Changed = false;
 
   for (auto &F : M) {
     for (auto &BB : F) {
@@ -105,14 +106,15 @@ bool Mix::runOnModule(Module &M) {
             new BitCastInst(CallInst::Create(Specializer, Args, "", Intr),
                             Intr->getType(), "", Intr);
         StagedModule->takeName(Intr);
-
         Intr->replaceAllUsesWith(StagedModule);
         BBI = Intr->eraseFromParent();
+
+        Changed = true;
       }
     }
   }
 
-  return false;
+  return Changed;
 }
 
 Function *Mix::createSpecializer(Function *F) {
