@@ -6,6 +6,7 @@ add_llvm_library(LLVMAnalysis
   Analysis.cpp
   AssumptionCache.cpp
   BasicAliasAnalysis.cpp
+  BindingTimeAnalysis.cpp
   BlockFrequencyInfo.cpp
   BlockFrequencyInfoImpl.cpp
   BranchProbabilityInfo.cpp

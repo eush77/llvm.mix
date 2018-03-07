@@ -18,6 +18,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Analysis/BindingTimeAnalysis.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -33,6 +34,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Pass.h"
+#include "llvm/PassAnalysisSupport.h"
 #include "llvm/PassSupport.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
@@ -52,6 +54,10 @@ public:
   static char ID;
 
   Mix() : ModulePass(ID) {}
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addRequired<BindingTimeAnalysis>();
+  }
 
   bool runOnModule(Module &M) override;
 
@@ -118,6 +124,8 @@ bool Mix::runOnModule(Module &M) {
 }
 
 Function *Mix::createSpecializer(Function *F) {
+  auto &BTA = getAnalysis<BindingTimeAnalysis>(*F);
+
   DEBUG(dbgs() << "Creating specializer for @" << F->getName() << '\n');
 
   FunctionType *FT = F->getFunctionType();
@@ -171,7 +179,11 @@ Function *Mix::createSpecializer(Function *F) {
     StagedBuilder.positionBuilderAtEnd(StagedBuilder.stage(BB));
 
     for (auto &I: *BB) {
-      StagedBuilder.stage(&I);
+      if (BTA.isStatic(&I)) {
+        Builder.Insert(&I);
+      } else {
+        StagedBuilder.stage(&I);
+      }
     }
 
     for (auto *SuccBB: successors(BB)) {
@@ -186,8 +198,9 @@ Function *Mix::createSpecializer(Function *F) {
   return SpecF;
 }
 
-static RegisterPass<Mix>
-    RegisterMixPass("mix", "Compile staged functions for specialization");
+INITIALIZE_PASS_BEGIN(Mix, "mix", "Multi-Stage Compilation", false, false)
+INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
+INITIALIZE_PASS_END(Mix, "mix", "Multi-Stage Compilation", false, false)
 
 void llvm::addMixPass(PassManagerBuilder &Builder) {
   for (auto EP : {PassManagerBuilder::EP_EnabledOnOptLevel0,
