@@ -13,9 +13,12 @@
 
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 
+#include "llvm/IR/Argument.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
+#include "llvm/IR/Constant.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Pass.h"
 #include "llvm/PassAnalysisSupport.h"
@@ -25,13 +28,47 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
+#include <cassert>
+
 using namespace llvm;
 
 #define DEBUG_TYPE "bta"
 
 bool BindingTimeAnalysis::runOnFunction(Function &F) {
   DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
+
+  for (auto &BB : F) {
+    for (auto &I : BB) {
+      bool IsStatic = false;
+
+      if (!isa<ReturnInst>(&I)) {
+        IsStatic =
+            std::all_of(I.op_begin(), I.op_end(), [this](const auto &Op) {
+              if (auto *OpA = dyn_cast<Argument>(Op)) {
+                return true;
+              } else if (auto *OpC = dyn_cast<Constant>(Op)) {
+                return true;
+              } else if (auto *OpI = dyn_cast<Instruction>(Op)) {
+                return isStatic(OpI);
+              }
+
+              return false;
+            });
+      }
+
+      BindingTimes[&I] = IsStatic ? Static : Dynamic;
+    }
+  }
+
   return false;
+}
+
+bool BindingTimeAnalysis::isStatic(const Instruction *I) const {
+  auto Iter = BindingTimes.find(I);
+  assert(Iter != BindingTimes.end() && "Instruction has not been analyzed");
+
+  return Iter->second == Static;
 }
 
 namespace {

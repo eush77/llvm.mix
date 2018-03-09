@@ -15,6 +15,7 @@
 #ifndef LLVM_ANALYSIS_BINDINGTIMEANALYSIS_H
 #define LLVM_ANALYSIS_BINDINGTIMEANALYSIS_H
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Pass.h"
 
 namespace llvm {
@@ -24,6 +25,11 @@ class Instruction;
 class raw_ostream;
 
 class BindingTimeAnalysis : public FunctionPass {
+  enum BindingTime {
+    Static,
+    Dynamic,
+  };
+
 public:
   static char ID;
 
@@ -31,10 +37,14 @@ public:
 
   bool runOnFunction(Function &F) override;
 
-  bool isStatic(const Instruction *I) const { return false; }
+  // True if the instruction has static return binding time.
+  bool isStatic(const Instruction *I) const;
 
   using FunctionPass::print;
   void print(raw_ostream &OS, const Function &F) const;
+
+private:
+  DenseMap<Instruction *, BindingTime> BindingTimes;
 };
 
 } // end namespace llvm
