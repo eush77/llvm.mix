@@ -1,4 +1,4 @@
-; RUN: opt -verify -disable-output <%s
+; RUN: opt -verify -disable-output %s
 
 declare i8* @llvm.mix(i8*, metadata, ...)
 
