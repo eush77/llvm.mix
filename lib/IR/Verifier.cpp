@@ -3988,17 +3988,18 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
     Assert(F, "function not found", FID);
     Assert(!F->isDeclaration(), "function is not defined in the current module",
            FID);
-    Assert(F->isVarArg() ? F->arg_size() <= CS.arg_size() - 2
-                         : F->arg_size() == CS.arg_size() - 2,
-           "llvm.mix intrinsic takes the same number of vararg arguments as "
+    Assert(F->arg_size() <= CS.arg_size() - 2,
+           "arguments of llvm.mix intrinsic must match static parameters of "
            "the source function",
            CS);
+    Assert(F->isVarArg() || F->arg_size() == CS.arg_size() - 2,
+           "too many arguments of llvm.mix intrinsic", CS);
     Assert(std::equal(F->arg_begin(), F->arg_end(), CS.arg_begin() + 2,
                       [](const auto &Arg, const auto &Op) {
                         return Arg.getType() == Op->getType();
                       }),
-           "llvm.mix intrinsic takes vararg arguments of the same type as "
-           "the source function",
+           "argument type of llvm.mix intrinsic does not match signature "
+           "of the source function",
            CS);
     break;
   }
