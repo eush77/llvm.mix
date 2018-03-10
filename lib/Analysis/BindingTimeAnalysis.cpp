@@ -43,7 +43,7 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   // static.
   for (auto &I : instructions(F)) {
     if (I.getType()->isVoidTy() || I.mayHaveSideEffects() ||
-        I.mayReadFromMemory() || isa<CallInst>(&I)) {
+        I.mayReadFromMemory() || isa<CallInst>(&I) || isa<AllocaInst>(&I)) {
       DEBUG({
         dbgs() << "Instruction";
         if (I.hasName()) {
