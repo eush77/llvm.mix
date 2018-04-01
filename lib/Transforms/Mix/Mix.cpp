@@ -179,10 +179,14 @@ Function *Mix::createSpecializer(Function *F) {
     StagedBuilder.positionBuilderAtEnd(StagedBuilder.stage(BB));
 
     for (auto &I: *BB) {
-      if (BTA.isStatic(&I)) {
+      switch (BTA.getBindingTime(&I)) {
+      case BindingTimeAnalysis::Static:
         Builder.Insert(&I);
-      } else {
+        break;
+
+      case BindingTimeAnalysis::Dynamic:
         StagedBuilder.stage(&I);
+        break;
       }
     }
 

@@ -15,8 +15,11 @@
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
@@ -34,51 +37,82 @@ using namespace llvm;
 
 #define DEBUG_TYPE "bta"
 
+#ifndef NDEBUG
+raw_ostream &dumpDynInst(const Instruction *I) {
+  dbgs() << "Instruction";
+
+  if (I->hasName()) {
+    dbgs() << " %" << I->getName();
+  }
+
+  return dbgs() << " is dynamic";
+}
+#endif
+
 bool BindingTimeAnalysis::runOnFunction(Function &F) {
   DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
-  SetVector<const Instruction *> DynamicInstructions;
+  // A queue of marked instructions. Dynamic instructions go there, but also
+  // static phis with dynamic operands.
+  SetVector<const Instruction *> MarkedInstructions;
 
-  // Push dynamic roots to DynamicInstructions and mark everything else
-  // static.
+  // Push dynamic roots to the queue and make everything else static.
   for (auto &I : instructions(F)) {
     if (I.getType()->isVoidTy() || I.mayHaveSideEffects() ||
         I.mayReadFromMemory() || isa<CallInst>(&I) || isa<AllocaInst>(&I)) {
-      DEBUG({
-        dbgs() << "Instruction";
-        if (I.hasName()) {
-          dbgs() << " %" << I.getName();
-        }
-        dbgs() << " is dynamic:\n" << I << '\n';
-      });
-
-      DynamicInstructions.insert(&I);
-      BindingTimes[&I] = Dynamic;
+      DEBUG(dumpDynInst(&I) << ":\n" << I << '\n');
+      InstructionBindingTimes[&I] = Dynamic;
+      MarkedInstructions.insert(&I);
     } else {
-      BindingTimes[&I] = Static;
+      InstructionBindingTimes[&I] = Static;
     }
   }
 
-  // Mark every user of a dynamic value dynamic.
-  for (unsigned DINum = 0; DINum < DynamicInstructions.size(); ++DINum) {
-    const Instruction *DynInst = DynamicInstructions[DINum];
+  // Compute the fixed point of binding-time rules.
+  for (unsigned MINum = 0; MINum < MarkedInstructions.size(); ++MINum) {
+    const Instruction *MarkedInst = MarkedInstructions[MINum];
 
-    for (auto &Use : DynInst->uses()) {
+    // Mark instruction users.
+    for (auto &Use : MarkedInst->uses()) {
       if (auto *UserInst = dyn_cast<Instruction>(Use.getUser())) {
-        if (!isStatic(UserInst))
+        MarkedInstructions.insert(UserInst);
+
+        if (isa<PHINode>(UserInst)) {
+          // Don't change binding times of phis.
           continue;
+        }
 
-        DEBUG({
-          dbgs() << "Instruction";
-          if (UserInst->hasName()) {
-            dbgs() << " %" << UserInst->getName();
-          }
-          dbgs() << " is dynamic (user of %" << DynInst->getName() << "):\n"
-                 << *UserInst << '\n';
-        });
+        DEBUG(dumpDynInst(UserInst)
+              << " (user of %" << MarkedInst->getName() << "):\n"
+              << *UserInst << '\n');
+        InstructionBindingTimes[UserInst] = Dynamic;
+      }
+    }
 
-        DynamicInstructions.insert(UserInst);
-        BindingTimes[UserInst] = Dynamic;
+    // Make successor blocks dynamic.
+    if (auto *DynTerm = dyn_cast<TerminatorInst>(MarkedInst)) {
+      for (auto *SuccBB : DynTerm->successors()) {
+        BasicBlockBindingTimes[SuccBB] = Dynamic;
+
+        // Make phis dynamic.
+        for (auto &Phi : SuccBB->phis()) {
+          DEBUG(dumpDynInst(&Phi)
+                << " (in dynamic basic block %" << SuccBB->getName() << "):\n"
+                << Phi << '\n');
+          InstructionBindingTimes[&Phi] = Dynamic;
+          MarkedInstructions.insert(&Phi);
+        }
+
+        // Make terminators in predecessor blocks dynamic.
+        for (auto *PredBB : predecessors(SuccBB)) {
+          const TerminatorInst *PredTerm = PredBB->getTerminator();
+
+          DEBUG(dumpDynInst(PredTerm) << " (jumps to dynamic basic block %"
+                                      << SuccBB->getName() << "):\n"
+                                      << *PredTerm << '\n');
+          InstructionBindingTimes[PredTerm] = Dynamic;
+          MarkedInstructions.insert(PredTerm);
+        }
       }
     }
   }
@@ -86,11 +120,22 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   return false;
 }
 
-bool BindingTimeAnalysis::isStatic(const Instruction *I) const {
-  auto Iter = BindingTimes.find(I);
-  assert(Iter != BindingTimes.end() && "Instruction has not been analyzed");
+BindingTimeAnalysis::BindingTime
+BindingTimeAnalysis::getBindingTime(const BasicBlock *I) const {
+  auto Iter = BasicBlockBindingTimes.find(I);
+  assert(Iter != BasicBlockBindingTimes.end() &&
+         "Basic block has not been analyzed");
 
-  return Iter->second == Static;
+  return Iter->second;
+}
+
+BindingTimeAnalysis::BindingTime
+BindingTimeAnalysis::getBindingTime(const Instruction *I) const {
+  auto Iter = InstructionBindingTimes.find(I);
+  assert(Iter != InstructionBindingTimes.end() &&
+         "Instruction has not been analyzed");
+
+  return Iter->second;
 }
 
 namespace {
@@ -103,7 +148,8 @@ public:
 
   void emitInstructionAnnot(const Instruction *I,
                             formatted_raw_ostream &OS) override {
-    if (BTA.isStatic(I) && OS.has_colors()) {
+    if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static &&
+        OS.has_colors()) {
       OS.changeColor(raw_ostream::YELLOW, false, false);
     }
   }
@@ -111,7 +157,7 @@ public:
   void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
     auto *I = dyn_cast<Instruction>(&V);
 
-    if (!I || !BTA.isStatic(I))
+    if (!I || BTA.getBindingTime(I) == BindingTimeAnalysis::Dynamic)
       return;
 
     if (OS.has_colors()) {

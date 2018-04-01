@@ -20,16 +20,12 @@
 
 namespace llvm {
 
+class BasicBlock;
 class Function;
 class Instruction;
 class raw_ostream;
 
 class BindingTimeAnalysis : public FunctionPass {
-  enum BindingTime {
-    Static,
-    Dynamic,
-  };
-
 public:
   static char ID;
 
@@ -37,14 +33,21 @@ public:
 
   bool runOnFunction(Function &F) override;
 
-  // True if the instruction has static return binding time.
-  bool isStatic(const Instruction *I) const;
+  enum BindingTime {
+    Static,
+    Dynamic,
+  };
+
+  // Get binding time of instruction or basic block.
+  BindingTime getBindingTime(const BasicBlock *BB) const;
+  BindingTime getBindingTime(const Instruction *I) const;
 
   using FunctionPass::print;
   void print(raw_ostream &OS, const Function &F) const;
 
 private:
-  DenseMap<Instruction *, BindingTime> BindingTimes;
+  DenseMap<const BasicBlock *, BindingTime> BasicBlockBindingTimes;
+  DenseMap<const Instruction *, BindingTime> InstructionBindingTimes;
 };
 
 } // end namespace llvm
