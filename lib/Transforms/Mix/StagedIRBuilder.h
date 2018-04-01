@@ -24,6 +24,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/IR/Argument.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
@@ -107,6 +108,7 @@ private:
         Name.str(), FunctionType::get(Result, Params, false));
   }
 
+  Instruction *stageArgument(Argument *Arg);
   Instruction *stageBasicBlock(BasicBlock *Block);
   Instruction *stageConstant(Constant *Const, const Twine &InstName = "");
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
@@ -298,6 +300,15 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 
   StagedTypes[Ty] = StagedTy;
   return StagedTy;
+}
+
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stageArgument(Argument *Arg) {
+  return B.CreateCall(
+      getAPIFunction("LLVMGetParam", getValuePtrTy(),
+                     {getValuePtrTy(), getUnsignedIntTy()}),
+      {StagedFunction, ConstantInt::get(getUnsignedIntTy(), Arg->getArgNo())},
+      Arg->getName());
 }
 
 template <typename IRBuilder>
@@ -497,7 +508,9 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
   if (StagedV)
     return StagedV;
 
-  if (auto *Block = dyn_cast<BasicBlock>(V)) {
+  if (auto *Arg = dyn_cast<Argument>(V)) {
+    StagedV = stageArgument(Arg);
+  } else if (auto *Block = dyn_cast<BasicBlock>(V)) {
     StagedV = stageBasicBlock(Block);
   } else if (auto *Const = dyn_cast<Constant>(V)) {
     StagedV = stageConstant(Const);
