@@ -38,6 +38,10 @@ using namespace llvm;
 #define DEBUG_TYPE "bta"
 
 #ifndef NDEBUG
+raw_ostream &dumpDynBB(const BasicBlock *BB) {
+  return dbgs() << "Basic block %" << BB->getName() << " is dynamic";
+}
+
 raw_ostream &dumpDynInst(const Instruction *I) {
   dbgs() << "Instruction";
 
@@ -92,6 +96,9 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
     // Make successor blocks dynamic.
     if (auto *DynTerm = dyn_cast<TerminatorInst>(MarkedInst)) {
       for (auto *SuccBB : DynTerm->successors()) {
+        DEBUG(dumpDynBB(SuccBB) << " (destination of terminator "
+                                << DynTerm->getOpcodeName() << "):\n"
+                                << *DynTerm << '\n');
         BasicBlockBindingTimes[SuccBB] = Dynamic;
 
         // Make phis dynamic.
@@ -107,7 +114,7 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
         for (auto *PredBB : predecessors(SuccBB)) {
           const TerminatorInst *PredTerm = PredBB->getTerminator();
 
-          DEBUG(dumpDynInst(PredTerm) << " (jumps to dynamic basic block %"
+          DEBUG(dumpDynInst(PredTerm) << " (branches to dynamic basic block %"
                                       << SuccBB->getName() << "):\n"
                                       << *PredTerm << '\n');
           InstructionBindingTimes[PredTerm] = Dynamic;
