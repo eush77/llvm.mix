@@ -4,20 +4,24 @@
 define i32 @power-iter(i32* %px, i32 %n) {
 entry:
   %x = load i32, i32* %px
+  ; CHECK: br label %check-next ; static
   br label %check-next
 
 check-next:
+  ; CHECK: %res.0 = phi {{.*}}; static
   %res.0 = phi i32 [ 1, %entry ], [ %res.1, %next ]
   ; CHECK: %n.0 = phi {{.*}}; static
   %n.0 = phi i32 [ %n, %entry ], [ %n.1, %next ]
   ; CHECK: %zerop = icmp eq {{.*}}; static
   %zerop = icmp eq i32 %n.0, 0
+  ; CHECK: br {{.*}}, label %exit, label %next ; static
   br i1 %zerop, label %exit, label %next
 
 next:
   %res.1 = mul i32 %res.0, %x
   ; CHECK: %n.1 = sub {{.*}}; static
   %n.1 = sub i32 %n.0, 1
+  ; CHECK: br label %check-next ; static
   br label %check-next
 
 exit:

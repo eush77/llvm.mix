@@ -37,6 +37,23 @@ using namespace llvm;
 
 #define DEBUG_TYPE "bta"
 
+namespace {
+
+bool isPossiblyStaticTerminator(const Instruction *I) {
+  if (!I->isTerminator())
+    return false;
+
+  switch (I->getOpcode()) {
+  case Instruction::Br:
+  case Instruction::Switch:
+  case Instruction::IndirectBr:
+    return true;
+
+  default:
+    return false;
+  }
+}
+
 #ifndef NDEBUG
 raw_ostream &dumpDynBB(const BasicBlock *BB) {
   return dbgs() << "Basic block %" << BB->getName() << " is dynamic";
@@ -53,6 +70,8 @@ raw_ostream &dumpDynInst(const Instruction *I) {
 }
 #endif
 
+} // namespace
+
 bool BindingTimeAnalysis::runOnFunction(Function &F) {
   DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
@@ -62,8 +81,9 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
 
   // Push dynamic roots to the queue and make everything else static.
   for (auto &I : instructions(F)) {
-    if (I.getType()->isVoidTy() || I.mayHaveSideEffects() ||
-        I.mayReadFromMemory() || isa<CallInst>(&I) || isa<AllocaInst>(&I)) {
+    if ((I.getType()->isVoidTy() && !isPossiblyStaticTerminator(&I)) ||
+        I.mayHaveSideEffects() || I.mayReadFromMemory() || isa<CallInst>(&I) ||
+        isa<AllocaInst>(&I)) {
       DEBUG(dumpDynInst(&I) << ":\n" << I << '\n');
       InstructionBindingTimes[&I] = Dynamic;
       MarkedInstructions.insert(&I);
