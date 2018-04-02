@@ -32,6 +32,8 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <cassert>
+#include <iterator>
+#include <memory>
 
 using namespace llvm;
 
@@ -92,6 +94,17 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
     }
   }
 
+  // Make all basic blocks static, except for the entry block. Entry block is
+  // dynamic by definition.
+  for (auto &BB : F) {
+    if (&BB == &F.getEntryBlock()) {
+      BasicBlockBindingTimes[&BB] = Dynamic;
+      continue;
+    }
+
+    BasicBlockBindingTimes[&BB] = Static;
+  }
+
   // Compute the fixed point of binding-time rules.
   for (unsigned MINum = 0; MINum < MarkedInstructions.size(); ++MINum) {
     const Instruction *MarkedInst = MarkedInstructions[MINum];
@@ -148,8 +161,8 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
 }
 
 BindingTimeAnalysis::BindingTime
-BindingTimeAnalysis::getBindingTime(const BasicBlock *I) const {
-  auto Iter = BasicBlockBindingTimes.find(I);
+BindingTimeAnalysis::getBindingTime(const BasicBlock *BB) const {
+  auto Iter = BasicBlockBindingTimes.find(BB);
   assert(Iter != BasicBlockBindingTimes.end() &&
          "Basic block has not been analyzed");
 
@@ -167,35 +180,140 @@ BindingTimeAnalysis::getBindingTime(const Instruction *I) const {
 
 namespace {
 
-class BindingTimeAnalysisAssemblyAnnotationWriter
+// Plain AssemblyAnnotationWriter for BindingTimeAnalysis.
+//
+// Prints the results in plain-text comments beneath basic blocks and to the
+// right of instructions.
+class BindingTimeAnalysisPlainAssemblyAnnotationWriter
     : public AssemblyAnnotationWriter {
 public:
-  BindingTimeAnalysisAssemblyAnnotationWriter(const BindingTimeAnalysis &BTA)
+  BindingTimeAnalysisPlainAssemblyAnnotationWriter(
+      const BindingTimeAnalysis &BTA)
       : BTA(BTA) {}
+
+  void emitBasicBlockStartAnnot(const BasicBlock *BB,
+                                formatted_raw_ostream &OS) override {
+    if (BTA.getBindingTime(BB) == BindingTimeAnalysis::Static &&
+        // If a block has no name and is unused, AssemblyWriter won't print
+        // its label.
+        (BB->hasName() || !BB->use_empty())) {
+      OS << "; static\n";
+    }
+  }
+
+  void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
+    if (auto *I = dyn_cast<Instruction>(&V)) {
+      if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static) {
+        OS.PadToColumn(40) << "; static";
+      }
+    }
+  }
+
+private:
+  const BindingTimeAnalysis &BTA;
+};
+
+// Color AssemblyAnnotationWriter for BindingTimeAnalysis.
+//
+// Displays the results by color-coding static parts of the IR.
+class BindingTimeAnalysisColorAssemblyAnnotationWriter
+    : public AssemblyAnnotationWriter {
+public:
+  BindingTimeAnalysisColorAssemblyAnnotationWriter(
+      const BindingTimeAnalysis &BTA)
+      : BTA(BTA) {}
+
+  void emitBasicBlockStartAnnot(const BasicBlock *BB,
+                                formatted_raw_ostream &OS) override {
+    // Reset color after a name of static basic block.
+    resetColor(OS);
+  }
 
   void emitInstructionAnnot(const Instruction *I,
                             formatted_raw_ostream &OS) override {
-    if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static &&
-        OS.has_colors()) {
-      OS.changeColor(raw_ostream::YELLOW, false, false);
+    // Set color for the static instruction.
+    if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static) {
+      setColor(OS);
     }
   }
 
   void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
     auto *I = dyn_cast<Instruction>(&V);
 
-    if (!I || BTA.getBindingTime(I) == BindingTimeAnalysis::Dynamic)
+    if (!I)
       return;
 
-    if (OS.has_colors()) {
-      OS.resetColor();
-    } else {
-      OS.PadToColumn(40) << "; static";
+    // Reset color after a static instruction.
+    if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static) {
+      resetColor(OS);
+    }
+
+    // Set the color for the name of the next static basic block.
+    if (auto *Term = dyn_cast<TerminatorInst>(I)) {
+      Function::const_iterator BB(Term->getParent());
+      Function::const_iterator NextBB(std::next(BB));
+
+      if (NextBB != BB->getParent()->end() &&
+          BTA.getBindingTime(&*NextBB) == BindingTimeAnalysis::Static) {
+        setColor(OS);
+      }
     }
   }
 
 private:
+  static void setColor(formatted_raw_ostream &OS) {
+    OS.changeColor(raw_ostream::YELLOW, false, false);
+  }
+
+  static void resetColor(formatted_raw_ostream &OS) {
+    OS.resetColor();
+  }
+
   const BindingTimeAnalysis &BTA;
+};
+
+// AssemblyAnnotationWriter for BindingTimeAnalysis.
+//
+// Selects the implementation based on the output stream.
+class BindingTimeAnalysisAssemblyAnnotationWriter
+    : public AssemblyAnnotationWriter {
+public:
+  BindingTimeAnalysisAssemblyAnnotationWriter(const BindingTimeAnalysis &BTA)
+      : BTA(BTA) {}
+
+  void emitFunctionAnnot(const Function *F,
+                         formatted_raw_ostream &OS) override {
+    if (OS.has_colors()) {
+      Impl.reset(new BindingTimeAnalysisColorAssemblyAnnotationWriter(BTA));
+    } else {
+      Impl.reset(new BindingTimeAnalysisPlainAssemblyAnnotationWriter(BTA));
+    }
+
+    Impl->emitFunctionAnnot(F, OS);
+  }
+
+  void emitBasicBlockStartAnnot(const BasicBlock *BB,
+                                formatted_raw_ostream &OS) override {
+    Impl->emitBasicBlockStartAnnot(BB, OS);
+  }
+
+  void emitBasicBlockEndAnnot(const BasicBlock *BB,
+                              formatted_raw_ostream &OS) override {
+    Impl->emitBasicBlockEndAnnot(BB, OS);
+  }
+
+  void emitInstructionAnnot(const Instruction *I,
+                            formatted_raw_ostream &OS) override {
+    Impl->emitInstructionAnnot(I, OS);
+  }
+
+  void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
+    Impl->printInfoComment(V, OS);
+  }
+
+private:
+  const BindingTimeAnalysis &BTA;
+  std::unique_ptr<AssemblyAnnotationWriter> Impl;
 };
 
 } // namespace

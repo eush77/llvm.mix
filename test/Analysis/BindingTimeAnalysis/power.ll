@@ -7,6 +7,8 @@ entry:
   ; CHECK: br label %check-next ; static
   br label %check-next
 
+; CHECK: check-next:
+; CHECK-NEXT: {{^}}; static
 check-next:
   ; CHECK: %res.0 = phi {{.*}}; static
   %res.0 = phi i32 [ 1, %entry ], [ %res.1, %next ]
@@ -17,6 +19,8 @@ check-next:
   ; CHECK: br {{.*}}, label %exit, label %next ; static
   br i1 %zerop, label %exit, label %next
 
+; CHECK: next:
+; CHECK-NEXT: {{^}}; static
 next:
   %res.1 = mul i32 %res.0, %x
   ; CHECK: %n.1 = sub {{.*}}; static
@@ -24,6 +28,8 @@ next:
   ; CHECK: br label %check-next ; static
   br label %check-next
 
+; CHECK: exit:
+; CHECK-NEXT: {{^}}; static
 exit:
   ret i32 %res.0
 }
