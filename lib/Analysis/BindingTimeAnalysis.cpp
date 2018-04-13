@@ -13,7 +13,6 @@
 
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 
-#include "llvm/ADT/SetVector.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -77,14 +76,13 @@ raw_ostream &dumpDynInst(const Instruction *I) {
 
 } // namespace
 
-// Compute basic block and instruction binding times.
-void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
-  // A queue of marked instructions. Dynamic instructions go there, but also
-  // static phis with dynamic operands.
-  SetVector<const Instruction *> MarkedInstructions;
+// Push dynamic roots to MarkedInstructions queue and make everything else
+// static.
+void BindingTimeAnalysis::initializeBindingTimeDivision(const Function &F) {
+  MarkedInstructions.clear();
+  NextMarkedInstructionNumber = 0;
 
-  // Push dynamic roots to the queue and make everything else static.
-  for (auto &I : instructions(F)) {
+  for (const auto &I : instructions(F)) {
     if ((I.getType()->isVoidTy() && !isPossiblyStaticTerminator(&I)) ||
         I.mayHaveSideEffects() || I.mayReadFromMemory() || isa<CallInst>(&I) ||
         isa<AllocaInst>(&I)) {
@@ -106,10 +104,15 @@ void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
 
     BasicBlockBindingTimes[&BB] = Static;
   }
+}
 
+// Compute fixed-point basic block and instruction binding-time division by
+// processing MarkedInstructions queue.
+void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
   // Compute the fixed point of binding-time rules.
-  for (unsigned MINum = 0; MINum < MarkedInstructions.size(); ++MINum) {
-    const Instruction *MarkedInst = MarkedInstructions[MINum];
+  while (NextMarkedInstructionNumber < MarkedInstructions.size()) {
+    const Instruction *MarkedInst =
+        MarkedInstructions[NextMarkedInstructionNumber++];
 
     // Mark instruction users.
     for (auto &Use : MarkedInst->uses()) {
@@ -188,12 +191,39 @@ void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
 
     const auto *Term = StaticTerminators.lookup(BB);
 
-    for (const auto *PredBB : predecessors(BB)) {
-      bool SingleStaticTerm =
-          StaticTerminators.try_emplace(PredBB, Term).second;
+    // Check if the terminator has got marked.
+    if (getBindingTime(Term) != Static)
+      continue;
 
-      if (!SingleStaticTerm) {
-        llvm_unreachable("Not implemented.");
+    for (const auto *PredBB : predecessors(BB)) {
+      auto EmplaceResult = StaticTerminators.try_emplace(PredBB, Term);
+
+      // Check if the map already contains a terminator.
+      if (!EmplaceResult.second) {
+        const auto *&PrevTerm = EmplaceResult.first->second;
+
+        // Check if previous static terminator has got marked in the interim and
+        // is no longer static, in which case replace it.
+        if (getBindingTime(PrevTerm) != Static) {
+          DEBUG(dbgs() << "Removing static terminator from %"
+                       << PredBB->getName() << ":\n"
+                       << *PrevTerm << '\n');
+
+          PrevTerm = Term;
+        }
+
+        // If previous terminator is still static, then report a conflict and
+        // make the current terminator dynamic.
+        else {
+          errs() << "Multiple static terminators for %" << PredBB->getName()
+                 << ":\n"
+                 << "  (         )" << *PrevTerm << '\n'
+                 << "  (->dynamic)" << *Term << '\n';
+
+          InstructionBindingTimes[Term] = Dynamic;
+          MarkedInstructions.insert(Term);
+          break;
+        }
       }
 
       DEBUG(dbgs() << "Adding static terminator for %" << PredBB->getName()
@@ -208,8 +238,13 @@ void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
 bool BindingTimeAnalysis::runOnFunction(Function &F) {
   DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
-  computeBindingTimeDivision(F);
-  computeStaticTerminators(F);
+  initializeBindingTimeDivision(F);
+
+  do {
+    computeBindingTimeDivision(F);
+    computeStaticTerminators(F);
+  } while (NextMarkedInstructionNumber < MarkedInstructions.size());
+
   return false;
 }
 

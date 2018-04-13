@@ -18,6 +18,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/Pass.h"
 
@@ -109,12 +110,21 @@ public:
   void print(raw_ostream &OS, const Function &F) const;
 
 private:
+  void initializeBindingTimeDivision(const Function &F);
   void computeBindingTimeDivision(const Function &F);
   void computeStaticTerminators(const Function &F);
 
   DenseMap<const BasicBlock *, BindingTime> BasicBlockBindingTimes;
   DenseMap<const Instruction *, BindingTime> InstructionBindingTimes;
   DenseMap<const BasicBlock *, const TerminatorInst *> StaticTerminators;
+
+  // A queue of marked instructions and next position in the queue.
+  //
+  // Each instruction added here must have a dynamic value that will be
+  // propagated to all users. Note that this description includes static phis
+  // with dynamic operands as well as dynamic non-phis.
+  SetVector<const Instruction *> MarkedInstructions;
+  unsigned NextMarkedInstructionNumber = 0;
 };
 
 } // end namespace llvm
