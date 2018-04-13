@@ -1,10 +1,11 @@
-; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=static
+; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=static --implicit-check-not=sbb
 
 ; CHECK-LABEL: define i32 @power-iter(i32* %px, i32 %n)
 define i32 @power-iter(i32* %px, i32 %n) {
 entry:
   %x = load i32, i32* %px
   ; CHECK: br label %check-next ; static
+  ; CHECK: sbb ={{$}}
   br label %check-next
 
 ; CHECK: check-next:
@@ -17,6 +18,7 @@ check-next:
   ; CHECK: %zerop = icmp eq {{.*}}; static
   %zerop = icmp eq i32 %n.0, 0
   ; CHECK: br {{.*}}, label %exit, label %next ; static
+  ; CHECK: sbb = %check-next{{$}}
   br i1 %zerop, label %exit, label %next
 
 ; CHECK: next:
@@ -26,6 +28,7 @@ next:
   ; CHECK: %n.1 = sub {{.*}}; static
   %n.1 = sub i32 %n.0, 1
   ; CHECK: br label %check-next ; static
+  ; CHECK: sbb = %next{{$}}
   br label %check-next
 
 ; CHECK: exit:

@@ -28,12 +28,15 @@
 #include "llvm/PassSupport.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Printable.h"
 
 #include <cassert>
 #include <iterator>
 #include <memory>
+#include <queue>
 
 using namespace llvm;
 
@@ -74,9 +77,8 @@ raw_ostream &dumpDynInst(const Instruction *I) {
 
 } // namespace
 
-bool BindingTimeAnalysis::runOnFunction(Function &F) {
-  DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
-
+// Compute basic block and instruction binding times.
+void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
   // A queue of marked instructions. Dynamic instructions go there, but also
   // static phis with dynamic operands.
   SetVector<const Instruction *> MarkedInstructions;
@@ -156,7 +158,58 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
       }
     }
   }
+}
 
+void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
+  std::queue<const BasicBlock *> Worklist;
+
+  // Initialize static terminators.
+  for (const auto &BB : F) {
+    const auto *Term = BB.getTerminator();
+
+    if (getBindingTime(Term) == Static) {
+      DEBUG(dbgs() << "Adding static terminator for %" << BB.getName() << ":\n"
+                   << *Term << '\n');
+
+      StaticTerminators[&BB] = Term;
+      Worklist.push(&BB);
+    } else {
+      StaticTerminators.erase(&BB);
+    }
+  }
+
+  while (!Worklist.empty()) {
+    const auto *BB = Worklist.front();
+
+    Worklist.pop();
+
+    if (getBindingTime(BB) == Static)
+      continue;
+
+    const auto *Term = StaticTerminators.lookup(BB);
+
+    for (const auto *PredBB : predecessors(BB)) {
+      bool SingleStaticTerm =
+          StaticTerminators.try_emplace(PredBB, Term).second;
+
+      if (!SingleStaticTerm) {
+        llvm_unreachable("Not implemented.");
+      }
+
+      DEBUG(dbgs() << "Adding static terminator for %" << PredBB->getName()
+                   << ":\n"
+                   << *Term << '\n');
+
+      Worklist.push(PredBB);
+    }
+  }
+}
+
+bool BindingTimeAnalysis::runOnFunction(Function &F) {
+  DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
+
+  computeBindingTimeDivision(F);
+  computeStaticTerminators(F);
   return false;
 }
 
@@ -178,7 +231,60 @@ BindingTimeAnalysis::getBindingTime(const Instruction *I) const {
   return Iter->second;
 }
 
+BindingTimeAnalysis::StaticBasicBlockIterator &
+BindingTimeAnalysis::StaticBasicBlockIterator::
+operator=(const StaticBasicBlockIterator &Other) {
+  assert(BTA == Other.BTA &&
+         "Assigning static basic block iterator for a different analysis.");
+
+  Term = Other.Term;
+  MapIter = Other.MapIter;
+  MapEnd = Other.MapEnd;
+  return *this;
+}
+
+bool BindingTimeAnalysis::StaticBasicBlockIterator::
+operator==(const StaticBasicBlockIterator &Other) const {
+  assert(BTA == Other.BTA &&
+         "Comparing static basic block iterators for different analyses.");
+
+  return MapIter == Other.MapIter && MapEnd == Other.MapEnd &&
+         Term == Other.Term;
+}
+
+BindingTimeAnalysis::StaticBasicBlockIterator &
+    BindingTimeAnalysis::StaticBasicBlockIterator::operator++() {
+  ++MapIter;
+  skipToNextMapIter();
+  return *this;
+}
+
+// Skip to next matching underlying iterator.
+void BindingTimeAnalysis::StaticBasicBlockIterator::skipToNextMapIter() {
+  while (MapIter != MapEnd &&
+         (MapIter->second != Term ||
+          BTA->getBindingTime(MapIter->first) != BindingTimeAnalysis::Static)) {
+    ++MapIter;
+  }
+}
+
 namespace {
+
+Printable printSBB(const BindingTimeAnalysis &BTA, const TerminatorInst *Term) {
+  assert(BTA.getBindingTime(Term) == BindingTimeAnalysis::Static);
+
+  return Printable([=, &BTA](raw_ostream &OS) {
+    OS << "sbb =";
+
+    bool NeedComma = false;
+
+    for (const auto &SBB : BTA.staticBasicBlocks(Term)) {
+      OS << (NeedComma ? ", %" : " %") << SBB.getName();
+
+      NeedComma = true;
+    }
+  });
+}
 
 // Plain AssemblyAnnotationWriter for BindingTimeAnalysis.
 //
@@ -203,13 +309,21 @@ public:
 
   void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
     if (auto *I = dyn_cast<Instruction>(&V)) {
-      if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static) {
-        OS.PadToColumn(40) << "; static";
+      if (BTA.getBindingTime(I) != BindingTimeAnalysis::Static)
+        return;
+
+      OS.PadToColumn(InfoCommentColumn) << "; static";
+
+      // Print SBB set of this terminator.
+      if (auto *Term = dyn_cast<TerminatorInst>(I)) {
+        OS << ", " << printSBB(BTA, Term);
       }
     }
   }
 
 private:
+  static constexpr unsigned InfoCommentColumn = 42;
+
   const BindingTimeAnalysis &BTA;
 };
 
@@ -243,6 +357,13 @@ public:
     if (!I)
       return;
 
+    // Print SBB set of static terminator.
+    if (auto *Term = dyn_cast<TerminatorInst>(I)) {
+      if (BTA.getBindingTime(Term) == BindingTimeAnalysis::Static) {
+        OS.PadToColumn(InfoCommentColumn) << "; " << printSBB(BTA, Term);
+      }
+    }
+
     // Reset color after a static instruction.
     if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static) {
       resetColor(OS);
@@ -268,6 +389,8 @@ private:
   static void resetColor(formatted_raw_ostream &OS) {
     OS.resetColor();
   }
+
+  static constexpr unsigned InfoCommentColumn = 50;
 
   const BindingTimeAnalysis &BTA;
 };

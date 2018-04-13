@@ -1,4 +1,4 @@
-; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=static
+; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=static --implicit-check-not=sbb
 
 ; CHECK-LABEL: define i32 @plus(i32 %x, i32 %y)
 define i32 @plus(i32 %x, i32 %y) {
