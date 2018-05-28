@@ -53,59 +53,6 @@ public:
     return StaticTerminators.lookup(BB);
   }
 
-  // Iterate over static basic blocks with a given static terminator.
-  //
-  // This is a linear iteration over all DenseMap entries, so expect it to be
-  // slow.
-  class StaticBasicBlockIterator
-      : public iterator_facade_base<StaticBasicBlockIterator,
-                                    std::forward_iterator_tag,
-                                    const BasicBlock> {
-    using MapIterT =
-        DenseMap<const BasicBlock *, const TerminatorInst *>::const_iterator;
-
-  public:
-    StaticBasicBlockIterator(const BindingTimeAnalysis *BTA,
-                             const TerminatorInst *Term, MapIterT MapIter,
-                             MapIterT MapEnd)
-        : BTA(BTA), Term(Term), MapIter(MapIter), MapEnd(MapEnd) {
-      skipToNextMapIter();
-    }
-
-    StaticBasicBlockIterator &operator=(const StaticBasicBlockIterator &Other);
-
-    bool operator==(const StaticBasicBlockIterator &Other) const;
-
-    const BasicBlock &operator*() const {
-      return *MapIter->first;
-    }
-
-    StaticBasicBlockIterator &operator++();
-
-  private:
-    void skipToNextMapIter();
-
-    const BindingTimeAnalysis *BTA;
-    const TerminatorInst *Term;
-    MapIterT MapIter;
-    MapIterT MapEnd;
-  };
-
-  StaticBasicBlockIterator sbb_begin(const TerminatorInst *Term) const {
-    return StaticBasicBlockIterator(this, Term, StaticTerminators.begin(),
-                                    StaticTerminators.end());
-  }
-
-  StaticBasicBlockIterator sbb_end(const TerminatorInst *Term) const {
-    return StaticBasicBlockIterator(this, Term, StaticTerminators.end(),
-                                    StaticTerminators.end());
-  }
-
-  iterator_range<StaticBasicBlockIterator>
-  staticBasicBlocks(const TerminatorInst *Term) const {
-    return {sbb_begin(Term), sbb_end(Term)};
-  }
-
   using FunctionPass::print;
   void print(raw_ostream &OS, const Function &F) const;
 

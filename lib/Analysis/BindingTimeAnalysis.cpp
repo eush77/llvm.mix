@@ -259,43 +259,6 @@ BindingTimeAnalysis::getBindingTime(const Instruction *I) const {
   return Iter->second;
 }
 
-BindingTimeAnalysis::StaticBasicBlockIterator &
-BindingTimeAnalysis::StaticBasicBlockIterator::
-operator=(const StaticBasicBlockIterator &Other) {
-  assert(BTA == Other.BTA &&
-         "Assigning static basic block iterator for a different analysis.");
-
-  Term = Other.Term;
-  MapIter = Other.MapIter;
-  MapEnd = Other.MapEnd;
-  return *this;
-}
-
-bool BindingTimeAnalysis::StaticBasicBlockIterator::
-operator==(const StaticBasicBlockIterator &Other) const {
-  assert(BTA == Other.BTA &&
-         "Comparing static basic block iterators for different analyses.");
-
-  return MapIter == Other.MapIter && MapEnd == Other.MapEnd &&
-         Term == Other.Term;
-}
-
-BindingTimeAnalysis::StaticBasicBlockIterator &
-    BindingTimeAnalysis::StaticBasicBlockIterator::operator++() {
-  ++MapIter;
-  skipToNextMapIter();
-  return *this;
-}
-
-// Skip to next matching underlying iterator.
-void BindingTimeAnalysis::StaticBasicBlockIterator::skipToNextMapIter() {
-  while (MapIter != MapEnd &&
-         (MapIter->second != Term ||
-          BTA->getBindingTime(MapIter->first) != BindingTimeAnalysis::Static)) {
-    ++MapIter;
-  }
-}
-
 namespace {
 
 Printable printSBB(const BindingTimeAnalysis &BTA, const TerminatorInst *Term) {
@@ -306,10 +269,12 @@ Printable printSBB(const BindingTimeAnalysis &BTA, const TerminatorInst *Term) {
 
     bool NeedComma = false;
 
-    for (const auto &SBB : BTA.staticBasicBlocks(Term)) {
-      OS << (NeedComma ? ", %" : " %") << SBB.getName();
-
-      NeedComma = true;
+    for (const auto &BB : *Term->getParent()->getParent()) {
+      if (BTA.getBindingTime(&BB) == BindingTimeAnalysis::Static &&
+          BTA.getStaticTerminator(&BB) == Term) {
+        OS << (NeedComma ? ", %" : " %") << BB.getName();
+        NeedComma = true;
+      }
     }
   });
 }
