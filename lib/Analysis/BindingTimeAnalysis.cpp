@@ -94,14 +94,7 @@ void BindingTimeAnalysis::initializeBindingTimeDivision(const Function &F) {
     }
   }
 
-  // Make all basic blocks static, except for the entry block. Entry block is
-  // dynamic by definition.
   for (auto &BB : F) {
-    if (&BB == &F.getEntryBlock()) {
-      BasicBlockBindingTimes[&BB] = Dynamic;
-      continue;
-    }
-
     BasicBlockBindingTimes[&BB] = Static;
   }
 }
@@ -335,6 +328,10 @@ public:
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
                                 formatted_raw_ostream &OS) override {
     if (BTA.getBindingTime(BB) == BindingTimeAnalysis::Static &&
+        // Don't emit binding time for the entry block even though it's
+        // static, since BindingTimeAnalysisColorAssemblyAnnotationWriter
+        // is unable to do it.
+        BB != &BB->getParent()->getEntryBlock() &&
         // If a block has no name and is unused, AssemblyWriter won't print
         // its label.
         (BB->hasName() || !BB->use_empty())) {

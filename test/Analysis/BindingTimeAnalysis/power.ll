@@ -5,7 +5,7 @@ define i32 @power-iter(i32* %px, i32 %n) {
 entry:
   %x = load i32, i32* %px
   ; CHECK: br label %check-next ; static
-  ; CHECK: sbb ={{$}}
+  ; CHECK: sbb = %entry{{$}}
   br label %check-next
 
 ; CHECK: check-next:
