@@ -208,10 +208,14 @@ void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
         // If previous terminator is still static, then report a conflict and
         // make the current terminator dynamic.
         else {
-          errs() << "Multiple static terminators for %" << PredBB->getName()
-                 << ":\n"
-                 << "  (         )" << *PrevTerm << '\n'
-                 << "  (->dynamic)" << *Term << '\n';
+          ferrs() << "Multiple static terminators for %" << PredBB->getName()
+                  << ":\n";
+          ferrs() << "  (         )" << *PrevTerm;
+          ferrs().PadToColumn(50)
+              << "; %" << PrevTerm->getParent()->getName() << '\n';
+          ferrs() << "  (->dynamic)" << *Term;
+          ferrs().PadToColumn(50)
+              << "; %" << Term->getParent()->getName() << '\n';
 
           InstructionBindingTimes[Term] = Dynamic;
           MarkedInstructions.insert(Term);
