@@ -13,6 +13,7 @@
 
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -36,8 +37,10 @@
 #include <iterator>
 #include <memory>
 #include <queue>
+#include <string>
 
 using namespace llvm;
+using namespace std::literals::string_literals;
 
 #define DEBUG_TYPE "bta"
 
@@ -56,6 +59,31 @@ bool isPossiblyStaticTerminator(const Instruction *I) {
   default:
     return false;
   }
+}
+
+constexpr unsigned CommentColumn = 50;
+
+// Print helper for Instruction that follows it with the name of the basic
+// block padded to CommentColumn.
+class PrintInstWithBlock {
+public:
+  explicit PrintInstWithBlock(const Instruction *I, StringRef Prefix = "")
+      : I(I), Prefix(Prefix) {}
+
+  void print(formatted_raw_ostream &OS) const {
+    OS << Prefix << *I;
+    OS.PadToColumn(CommentColumn) << "; %" << I->getParent()->getName() << '\n';
+  }
+
+private:
+  const Instruction *I;
+  std::string Prefix;
+};
+
+raw_ostream &operator<<(raw_ostream &OS, PrintInstWithBlock P) {
+  formatted_raw_ostream FOS(OS);
+  P.print(FOS);
+  return OS;
 }
 
 #ifndef NDEBUG
@@ -86,7 +114,7 @@ void BindingTimeAnalysis::initializeBindingTimeDivision(const Function &F) {
     if ((I.getType()->isVoidTy() && !isPossiblyStaticTerminator(&I)) ||
         I.mayHaveSideEffects() || I.mayReadFromMemory() || isa<CallInst>(&I) ||
         isa<AllocaInst>(&I)) {
-      DEBUG(dumpDynInst(&I) << ":\n" << I << '\n');
+      DEBUG(dumpDynInst(&I) << ":\n" << PrintInstWithBlock(&I));
       InstructionBindingTimes[&I] = Dynamic;
       MarkedInstructions.insert(&I);
     } else {
@@ -119,7 +147,7 @@ void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
 
         DEBUG(dumpDynInst(UserInst)
               << " (user of %" << MarkedInst->getName() << "):\n"
-              << *UserInst << '\n');
+              << PrintInstWithBlock(UserInst));
         InstructionBindingTimes[UserInst] = Dynamic;
       }
     }
@@ -129,14 +157,14 @@ void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
       for (auto *SuccBB : DynTerm->successors()) {
         DEBUG(dumpDynBB(SuccBB) << " (destination of terminator "
                                 << DynTerm->getOpcodeName() << "):\n"
-                                << *DynTerm << '\n');
+                                << PrintInstWithBlock(DynTerm));
         BasicBlockBindingTimes[SuccBB] = Dynamic;
 
         // Make phis dynamic.
         for (auto &Phi : SuccBB->phis()) {
           DEBUG(dumpDynInst(&Phi)
                 << " (in dynamic basic block %" << SuccBB->getName() << "):\n"
-                << Phi << '\n');
+                << PrintInstWithBlock(&Phi));
           InstructionBindingTimes[&Phi] = Dynamic;
           MarkedInstructions.insert(&Phi);
         }
@@ -147,7 +175,7 @@ void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
 
           DEBUG(dumpDynInst(PredTerm) << " (branches to dynamic basic block %"
                                       << SuccBB->getName() << "):\n"
-                                      << *PredTerm << '\n');
+                                      << PrintInstWithBlock(PredTerm));
           InstructionBindingTimes[PredTerm] = Dynamic;
           MarkedInstructions.insert(PredTerm);
         }
@@ -165,7 +193,7 @@ void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
 
     if (getBindingTime(Term) == Static) {
       DEBUG(dbgs() << "Adding static terminator for %" << BB.getName() << ":\n"
-                   << *Term << '\n');
+                   << PrintInstWithBlock(Term));
 
       StaticTerminators[&BB] = Term;
       Worklist.push(&BB);
@@ -200,7 +228,7 @@ void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
         if (getBindingTime(PrevTerm) != Static) {
           DEBUG(dbgs() << "Removing static terminator from %"
                        << PredBB->getName() << ":\n"
-                       << *PrevTerm << '\n');
+                       << PrintInstWithBlock(PrevTerm));
 
           PrevTerm = Term;
         }
@@ -208,14 +236,10 @@ void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
         // If previous terminator is still static, then report a conflict and
         // make the current terminator dynamic.
         else {
-          ferrs() << "Multiple static terminators for %" << PredBB->getName()
-                  << ":\n";
-          ferrs() << "  (         )" << *PrevTerm;
-          ferrs().PadToColumn(50)
-              << "; %" << PrevTerm->getParent()->getName() << '\n';
-          ferrs() << "  (->dynamic)" << *Term;
-          ferrs().PadToColumn(50)
-              << "; %" << Term->getParent()->getName() << '\n';
+          errs() << "Multiple static terminators for %" << PredBB->getName()
+                 << ":\n"
+                 << PrintInstWithBlock(PrevTerm, "  (         )")
+                 << PrintInstWithBlock(Term, "  (->dynamic)");
 
           InstructionBindingTimes[Term] = Dynamic;
           MarkedInstructions.insert(Term);
@@ -225,7 +249,7 @@ void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
 
       DEBUG(dbgs() << "Adding static terminator for %" << PredBB->getName()
                    << ":\n"
-                   << *Term << '\n');
+                   << PrintInstWithBlock(Term));
 
       Worklist.push(PredBB);
     }
@@ -313,7 +337,8 @@ public:
       if (BTA.getBindingTime(I) != BindingTimeAnalysis::Static)
         return;
 
-      OS.PadToColumn(InfoCommentColumn) << "; static";
+      // Align following SBB comment to the CommentColumn.
+      OS.PadToColumn(CommentColumn - "; static"s.size()) << "; static";
 
       // Print SBB set of this terminator.
       if (auto *Term = dyn_cast<TerminatorInst>(I)) {
@@ -323,8 +348,6 @@ public:
   }
 
 private:
-  static constexpr unsigned InfoCommentColumn = 42;
-
   const BindingTimeAnalysis &BTA;
 };
 
@@ -361,7 +384,7 @@ public:
     // Print SBB set of static terminator.
     if (auto *Term = dyn_cast<TerminatorInst>(I)) {
       if (BTA.getBindingTime(Term) == BindingTimeAnalysis::Static) {
-        OS.PadToColumn(InfoCommentColumn) << "; " << printSBB(BTA, Term);
+        OS.PadToColumn(CommentColumn) << "; " << printSBB(BTA, Term);
       }
     }
 
@@ -390,8 +413,6 @@ private:
   static void resetColor(formatted_raw_ostream &OS) {
     OS.resetColor();
   }
-
-  static constexpr unsigned InfoCommentColumn = 50;
 
   const BindingTimeAnalysis &BTA;
 };
