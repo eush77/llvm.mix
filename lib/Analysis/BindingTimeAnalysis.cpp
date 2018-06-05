@@ -326,7 +326,7 @@ namespace llvm {
 class BindingTimeAnalysisPlainAssemblyAnnotationWriter
     : public AssemblyAnnotationWriter {
 public:
-  BindingTimeAnalysisPlainAssemblyAnnotationWriter(
+  explicit BindingTimeAnalysisPlainAssemblyAnnotationWriter(
       BindingTimeAnalysis &BTA)
       : BTA(BTA) {}
 
@@ -369,7 +369,7 @@ private:
 class BindingTimeAnalysisColorAssemblyAnnotationWriter
     : public AssemblyAnnotationWriter {
 public:
-  BindingTimeAnalysisColorAssemblyAnnotationWriter(
+  explicit BindingTimeAnalysisColorAssemblyAnnotationWriter(
       BindingTimeAnalysis &BTA)
       : BTA(BTA) {}
 
@@ -439,7 +439,7 @@ namespace {
 class BindingTimeAnalysisAssemblyAnnotationWriter
     : public AssemblyAnnotationWriter {
 public:
-  BindingTimeAnalysisAssemblyAnnotationWriter(BindingTimeAnalysis &BTA)
+  explicit BindingTimeAnalysisAssemblyAnnotationWriter(BindingTimeAnalysis &BTA)
       : BTA(BTA) {}
 
   void emitFunctionAnnot(const Function *F,
