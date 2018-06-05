@@ -18,9 +18,13 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/Printable.h"
 
 #include <iterator>
 
@@ -30,6 +34,7 @@ class Function;
 class Instruction;
 class raw_ostream;
 class TerminatorInst;
+class Value;
 
 class BindingTimeAnalysis : public FunctionPass {
 public:
@@ -54,12 +59,24 @@ public:
   }
 
   using FunctionPass::print;
-  void print(raw_ostream &OS, const Function &F) const;
+  void print(raw_ostream &OS, const Function &F);
 
 private:
+  friend class BindingTimeAnalysisPlainAssemblyAnnotationWriter;
+  friend class BindingTimeAnalysisColorAssemblyAnnotationWriter;
+
   void initializeBindingTimeDivision(const Function &F);
   void computeBindingTimeDivision(const Function &F);
   void computeStaticTerminators(const Function &F);
+
+  Printable printName(const Value *V);
+  Printable printInstWithBlock(const Instruction *I, StringRef Prefix = "");
+  Printable printSBB(const TerminatorInst *I);
+
+#ifndef NDEBUG
+  raw_ostream &dumpDynBB(const BasicBlock *BB);
+  raw_ostream &dumpDynInst(const Instruction *I);
+#endif
 
   DenseMap<const BasicBlock *, BindingTime> BasicBlockBindingTimes;
   DenseMap<const Instruction *, BindingTime> InstructionBindingTimes;
@@ -72,6 +89,9 @@ private:
   // with dynamic operands as well as dynamic non-phis.
   SetVector<const Instruction *> MarkedInstructions;
   unsigned NextMarkedInstructionNumber = 0;
+
+  // Slot tracker for printing.
+  Optional<ModuleSlotTracker> MST;
 };
 
 } // end namespace llvm
