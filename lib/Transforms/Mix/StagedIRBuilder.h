@@ -39,6 +39,7 @@
 
 #include <cassert>
 #include <functional>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -262,14 +263,30 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
     break;
 
   case Type::IntegerTyID: {
-    auto *IT = cast<IntegerType>(Ty);
+    unsigned BitWidth = cast<IntegerType>(Ty)->getBitWidth();
 
-    StagedTy =
-        B.CreateCall(getAPIFunction("LLVMIntTypeInContext", getTypePtrTy(),
-                                    {getContextPtrTy(), getUnsignedIntTy()}),
-                     {StagedContext,
-                      ConstantInt::get(getUnsignedIntTy(), IT->getBitWidth())},
-                     InstName);
+    switch (BitWidth) {
+    case 1:
+    case 8:
+    case 16:
+    case 32:
+    case 64:
+    case 128:
+      StagedTy = B.CreateCall(
+          getAPIFunction(Twine("LLVMInt") + std::to_string(BitWidth) +
+                             "TypeInContext",
+                         getTypePtrTy(), {getContextPtrTy()}),
+          {StagedContext}, InstName);
+      break;
+
+    default:
+      StagedTy = B.CreateCall(
+          getAPIFunction("LLVMIntTypeInContext", getTypePtrTy(),
+                         {getContextPtrTy(), getUnsignedIntTy()}),
+          {StagedContext, ConstantInt::get(getUnsignedIntTy(), BitWidth)},
+          InstName);
+    }
+
     break;
   }
 
