@@ -275,13 +275,18 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 
   case Type::FunctionTyID: {
     auto *FT = cast<FunctionType>(Ty);
-    auto *Params =
-        B.CreateAlloca(getTypePtrTy(), B.getInt32(FT->getNumParams()));
+    Value *Params;
 
-    for (unsigned ParamIndex = 0; ParamIndex < FT->getNumParams();
-         ++ParamIndex) {
-      B.CreateStore(stage(FT->getParamType(ParamIndex)),
-                    B.CreateGEP(Params, B.getInt32(ParamIndex)));
+    if (FT->getNumParams()) {
+      Params = B.CreateAlloca(getTypePtrTy(), B.getInt32(FT->getNumParams()));
+
+      for (unsigned ParamIndex = 0; ParamIndex < FT->getNumParams();
+           ++ParamIndex) {
+        B.CreateStore(stage(FT->getParamType(ParamIndex)),
+                      B.CreateGEP(Params, B.getInt32(ParamIndex)));
+      }
+    } else {
+      Params = ConstantPointerNull::get(PointerType::getUnqual(getTypePtrTy()));
     }
 
     StagedTy = B.CreateCall(
