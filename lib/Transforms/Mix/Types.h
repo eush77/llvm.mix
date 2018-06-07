@@ -18,29 +18,30 @@
 
 namespace llvm {
 
+class IntegerType;
 class LLVMContext;
-class Type;
+class PointerType;
 
 namespace mix {
 
 // C types.
-Type *getCharPtrTy(LLVMContext &);
-Type *getUnsignedIntTy(LLVMContext &);
-Type *getUnsignedLongLongIntTy(LLVMContext &);
+PointerType *getCharPtrTy(LLVMContext &);
+IntegerType *getUnsignedIntTy(LLVMContext &);
+IntegerType *getUnsignedLongLongIntTy(LLVMContext &);
 
 // LLVM-C types.
-Type *getBoolTy(LLVMContext &);
-Type *getIntPredicateTy(LLVMContext &);
-Type *getLinkageTy(LLVMContext &);
-Type *getOpcodeTy(LLVMContext &);
+IntegerType *getBoolTy(LLVMContext &);
+IntegerType *getIntPredicateTy(LLVMContext &);
+IntegerType *getLinkageTy(LLVMContext &);
+IntegerType *getOpcodeTy(LLVMContext &);
 
 // IR types.
-Type *getBasicBlockPtrTy(LLVMContext &);
-Type *getBuilderPtrTy(LLVMContext &);
-Type *getContextPtrTy(LLVMContext &);
-Type *getModulePtrTy(LLVMContext &);
-Type *getTypePtrTy(LLVMContext &);
-Type *getValuePtrTy(LLVMContext &);
+PointerType *getBasicBlockPtrTy(LLVMContext &);
+PointerType *getBuilderPtrTy(LLVMContext &);
+PointerType *getContextPtrTy(LLVMContext &);
+PointerType *getModulePtrTy(LLVMContext &);
+PointerType *getTypePtrTy(LLVMContext &);
+PointerType *getValuePtrTy(LLVMContext &);
 
 } // namespace mix
 

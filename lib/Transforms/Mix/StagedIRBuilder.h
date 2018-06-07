@@ -87,21 +87,31 @@ public:
   }
 
 private:
-  Type *getBasicBlockPtrTy() { return mix::getBasicBlockPtrTy(B.getContext()); }
-  Type *getBoolTy() { return mix::getBoolTy(B.getContext()); }
-  Type *getBuilderPtrTy() { return mix::getBuilderPtrTy(B.getContext()); }
-  Type *getCharPtrTy() { return mix::getCharPtrTy(B.getContext()); }
-  Type *getContextPtrTy() { return mix::getContextPtrTy(B.getContext()); }
-  Type *getIntPredicateTy() { return mix::getIntPredicateTy(B.getContext()); }
-  Type *getLinkageTy() { return mix::getLinkageTy(B.getContext()); }
-  Type *getModulePtrTy() { return mix::getModulePtrTy(B.getContext()); }
-  Type *getOpcodeTy() { return mix::getOpcodeTy(B.getContext()); }
-  Type *getTypePtrTy() { return mix::getTypePtrTy(B.getContext()); }
-  Type *getUnsignedIntTy() { return mix::getUnsignedIntTy(B.getContext()); }
-  Type *getUnsignedLongLongIntTy() {
+  IntegerType *getBoolTy() { return mix::getBoolTy(B.getContext()); }
+  IntegerType *getIntPredicateTy() {
+    return mix::getIntPredicateTy(B.getContext());
+  }
+  IntegerType *getLinkageTy() { return mix::getLinkageTy(B.getContext()); }
+  IntegerType *getOpcodeTy() { return mix::getOpcodeTy(B.getContext()); }
+  IntegerType *getUnsignedIntTy() {
+    return mix::getUnsignedIntTy(B.getContext());
+  }
+  IntegerType *getUnsignedLongLongIntTy() {
     return mix::getUnsignedLongLongIntTy(B.getContext());
   }
-  Type *getValuePtrTy() { return mix::getValuePtrTy(B.getContext()); }
+  PointerType *getBasicBlockPtrTy() {
+    return mix::getBasicBlockPtrTy(B.getContext());
+  }
+  PointerType *getBuilderPtrTy() {
+    return mix::getBuilderPtrTy(B.getContext());
+  }
+  PointerType *getCharPtrTy() { return mix::getCharPtrTy(B.getContext()); }
+  PointerType *getContextPtrTy() {
+    return mix::getContextPtrTy(B.getContext());
+  }
+  PointerType *getModulePtrTy() { return mix::getModulePtrTy(B.getContext()); }
+  PointerType *getTypePtrTy() { return mix::getTypePtrTy(B.getContext()); }
+  PointerType *getValuePtrTy() { return mix::getValuePtrTy(B.getContext()); }
 
   Constant *getAPIFunction(const Twine &Name, Type *Result,
                            ArrayRef<Type *> Params) {

@@ -41,31 +41,31 @@ template <typename T> IntegerType *getIntegerType(LLVMContext &Context) {
 
 } // namespace
 
-Type *mix::getCharPtrTy(LLVMContext &Context) {
+PointerType *mix::getCharPtrTy(LLVMContext &Context) {
   return PointerType::getUnqual(getIntegerType<char>(Context));
 }
 
-Type *mix::getUnsignedIntTy(LLVMContext &Context) {
+IntegerType *mix::getUnsignedIntTy(LLVMContext &Context) {
   return getIntegerType<unsigned int>(Context);
 }
 
-Type *mix::getUnsignedLongLongIntTy(LLVMContext &Context) {
+IntegerType *mix::getUnsignedLongLongIntTy(LLVMContext &Context) {
   return getIntegerType<unsigned long long>(Context);
 }
 
-Type *mix::getBoolTy(LLVMContext &Context) {
+IntegerType *mix::getBoolTy(LLVMContext &Context) {
   return getIntegerType<LLVMBool>(Context);
 }
 
-Type *mix::getIntPredicateTy(LLVMContext &Context) {
+IntegerType *mix::getIntPredicateTy(LLVMContext &Context) {
   return getIntegerType<LLVMIntPredicate>(Context);
 }
 
-Type *mix::getLinkageTy(LLVMContext &Context) {
+IntegerType *mix::getLinkageTy(LLVMContext &Context) {
   return getIntegerType<LLVMLinkage>(Context);
 }
 
-Type *mix::getOpcodeTy(LLVMContext &Context) {
+IntegerType *mix::getOpcodeTy(LLVMContext &Context) {
   return getIntegerType<LLVMOpcode>(Context);
 }
 
@@ -92,26 +92,26 @@ PointerType *getOpaquePointerType(LLVMContext &Context, StringRef Name) {
 
 } // namespace
 
-Type *mix::getBasicBlockPtrTy(LLVMContext &Context) {
+PointerType *mix::getBasicBlockPtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueBasicBlock");
 }
 
-Type *mix::getBuilderPtrTy(LLVMContext &Context) {
+PointerType *mix::getBuilderPtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueBuilder");
 }
 
-Type *mix::getContextPtrTy(LLVMContext &Context) {
+PointerType *mix::getContextPtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueContext");
 }
 
-Type *mix::getModulePtrTy(LLVMContext &Context) {
+PointerType *mix::getModulePtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueModule");
 }
 
-Type *mix::getTypePtrTy(LLVMContext &Context) {
+PointerType *mix::getTypePtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueType");
 }
 
-Type *mix::getValuePtrTy(LLVMContext &Context) {
+PointerType *mix::getValuePtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueValue");
 }
