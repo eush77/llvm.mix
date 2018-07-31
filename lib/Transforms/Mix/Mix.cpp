@@ -72,7 +72,8 @@ private:
   Function *createSpecializer(Function *F);
   static FunctionType *getSpecializerType(FunctionType *FT);
   void buildSpecializer();
-  void buildBasicBlock(BasicBlock *BB, BasicBlock *SBB);
+  void buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
+                       Instruction *StagedModule);
   void collectDynamicBlocks(BasicBlock *BB,
                             SetVector<BasicBlock *> &DynBBs) const;
   void buildInstruction(Instruction *I) const;
@@ -200,14 +201,12 @@ void Mix::buildSpecializer() {
     BasicBlock *SBB;
     std::tie(BB, SBB) = StaticBasicBlocks.begin()[SBBNum];
 
-    buildBasicBlock(BB, SBB);
+    buildBasicBlock(BB, SBB, StagedModule);
   }
-
-  SB->disposeBuilder();
-  B->CreateRet(StagedModule);
 }
 
-void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB) {
+void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
+                          Instruction *StagedModule) {
   DEBUG(dbgs() << "  - Building static basic block %" << BB->getName() << '\n');
 
   B->SetInsertPoint(SBB);
@@ -223,10 +222,15 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB) {
   }
 
   BasicBlock *TermBB = DynBBs.back();
+  const TerminatorInst *Term = TermBB->getTerminator();
+
+  if (isa<ReturnInst>(Term)) {
+    SB->disposeBuilder();
+    B->CreateRet(StagedModule);
+  }
 
   // Create new successor static blocks.
-  if (BTA->getBindingTime(TermBB->getTerminator()) ==
-      BindingTimeAnalysis::Static) {
+  if (BTA->getBindingTime(Term) == BindingTimeAnalysis::Static) {
     for (auto *SuccBB : successors(TermBB)) {
       if (!StaticBasicBlocks.count(SuccBB)) {
         StaticBasicBlocks[SuccBB] =

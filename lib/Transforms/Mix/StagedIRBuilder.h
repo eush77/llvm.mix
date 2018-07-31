@@ -54,10 +54,6 @@ public:
   StagedIRBuilder(IRBuilder &Builder, Value *StagedContext)
       : B(Builder), StagedContext(StagedContext) {}
 
-  ~StagedIRBuilder() {
-    assert(!StagedBuilder && "Staged IRBuilder is not disposed");
-  }
-
   // Interface to particular LLVM API calls.
   Instruction *createModule(const Twine &ModuleId, const Twine &InstName = "");
   Instruction *createFunction(FunctionType *Type,
@@ -249,12 +245,9 @@ StagedIRBuilder<IRBuilder>::positionBuilderAtEnd(Instruction *StagedBlock,
 
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::disposeBuilder(const Twine &InstName) {
-  auto *Inst = B.CreateCall(
+  return B.CreateCall(
       getAPIFunction("LLVMDisposeBuilder", B.getVoidTy(), {getBuilderPtrTy()}),
       {StagedBuilder}, InstName);
-
-  StagedBuilder = nullptr;
-  return Inst;
 }
 
 template <typename IRBuilder>
