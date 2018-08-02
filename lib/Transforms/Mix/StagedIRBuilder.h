@@ -76,6 +76,16 @@ public:
   // block means creating an empty basic block in the staged function.
   Instruction *stage(Value *V);
 
+  // Define static value in the generated function if it is defined elsewhere.
+  Value *defineStatic(Value *V);
+  Argument *defineStatic(Argument *A, Argument *SA);
+  BasicBlock *defineStatic(BasicBlock *BB);
+  Instruction *defineStatic(Instruction *I);
+  PHINode *defineStatic(PHINode *Phi, bool Staged);
+
+  // Stage a static value as a constant in generated code.
+  Instruction *stageStatic(Value *V);
+
   // Stage a string by creating a global string variable with a given
   // initializer and returning an `i8*' pointer to the first character.
   Value *stage(StringRef Name, const Twine &VarName = "mix.name") {
@@ -123,9 +133,10 @@ private:
 
   Instruction *stageArgument(Argument *Arg);
   Instruction *stageBasicBlock(BasicBlock *Block);
-  Instruction *stageConstant(Constant *Const, const Twine &InstName = "");
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
+
+  void addStagedValue(Value *V, Instruction *StagedV);
 
   // Register a callback to be called when the value is staged. If the value
   // has already been staged, call it immediately.
@@ -139,6 +150,9 @@ private:
   DenseMap<Value *, Instruction *> StagedValues;
   std::unordered_multimap<Value *, std::function<void(Instruction *)>>
       StageCallbacks;
+  DenseMap<Argument *, Argument *> StaticArguments;
+  DenseMap<BasicBlock *, BasicBlock *> StaticBasicBlocks;
+  DenseMap<Instruction *, Instruction *> StaticInstructions;
 };
 
 template <typename IRBuilder>
@@ -309,6 +323,16 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
                      InstName);
     break;
   }
+
+  case Type::PointerTyID: {
+    auto *PT = cast<PointerType>(Ty);
+
+    StagedTy = B.CreateCall(
+        getPointerTypeFn(),
+        {stage(PT->getElementType()),
+         ConstantInt::get(getUnsignedIntTy(), PT->getAddressSpace())});
+    break;
+  }
   }
 
   assert(StagedTy && "Unsupported type");
@@ -330,24 +354,6 @@ Instruction *StagedIRBuilder<IRBuilder>::stageBasicBlock(BasicBlock *Block) {
   return B.CreateCall(getAppendBasicBlockInContextFn(),
                       {StagedContext, StagedFunction, stage(Block->getName())},
                       Block->getName());
-}
-
-template <typename IRBuilder>
-Instruction *StagedIRBuilder<IRBuilder>::stageConstant(Constant *Const,
-                                                       const Twine &InstName) {
-  if (auto *ConstInt = dyn_cast<ConstantInt>(Const)) {
-    assert(ConstInt->getValue().getNumWords() == 1 &&
-           "Unsupported integer width");
-
-    return B.CreateCall(
-        getConstIntFn(),
-        {stage(Const->getType()),
-         ConstantInt::get(getUnsignedLongLongIntTy(), ConstInt->getZExtValue()),
-         ConstantInt::get(getBoolTy(), false)},
-        InstName);
-  }
-
-  llvm_unreachable("Unsupported constant kind");
 }
 
 // Stage list of incoming values and add them to the already staged Phi node.
@@ -518,7 +524,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
   } else if (auto *Block = dyn_cast<BasicBlock>(V)) {
     StagedV = stageBasicBlock(Block);
   } else if (auto *Const = dyn_cast<Constant>(V)) {
-    StagedV = stageConstant(Const);
+    StagedV = stageStatic(Const);
   } else if (auto *Inst = dyn_cast<Instruction>(V)) {
     StagedV = stageInstruction(Inst);
 
@@ -528,16 +534,205 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
   }
 
   assert(StagedV && "Unsupported value kind");
+  addStagedValue(V, StagedV);
+  return StagedV;
+}
 
-  StagedValues[V] = StagedV;
+template <typename IRBuilder>
+Argument *StagedIRBuilder<IRBuilder>::defineStatic(Argument *A, Argument *SA) {
+  if (A->getParent() == B.GetInsertBlock()->getParent())
+    return A;
 
+  if (SA) {
+    assert(!StaticArguments.lookup(A) && "Argument has already been defined");
+  } else {
+    SA = StaticArguments.lookup(A);
+    assert(SA && "Argument has not been defined");
+    return SA;
+  }
+
+  return StaticArguments[A] = SA;
+}
+
+template <typename IRBuilder>
+BasicBlock *StagedIRBuilder<IRBuilder>::defineStatic(BasicBlock *BB) {
+  if (BB->getParent() == B.GetInsertBlock()->getParent())
+    return BB;
+
+  auto *SBB = StaticBasicBlocks.lookup(BB);
+
+  if (SBB)
+    return SBB;
+
+  if (BB == &BB->getParent()->getEntryBlock()) {
+    SBB = &B.GetInsertBlock()->getParent()->getEntryBlock();
+  } else {
+    SBB = BasicBlock::Create(B.getContext(), BB->getName(),
+                             B.GetInsertBlock()->getParent());
+  }
+
+  return StaticBasicBlocks[BB] = SBB;
+}
+
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::defineStatic(Instruction *I) {
+  if (I->getFunction() == B.GetInsertBlock()->getParent())
+    return I;
+
+  auto *SI = StaticInstructions.lookup(I);
+
+  if (SI)
+    return SI;
+
+  assert(!isa<PHINode>(I) && "Static PHI nodes require an explicit type");
+
+  SI = B.Insert(I->clone(), I->getName());
+
+  // Remap operands.
+  for (Use &Op : SI->operands()) {
+    Op = defineStatic(Op);
+  }
+
+  return StaticInstructions[I] = SI;
+}
+
+// Static phi has either current or staged type depending on the binding type
+// of its operands.
+template <typename IRBuilder>
+PHINode *StagedIRBuilder<IRBuilder>::defineStatic(PHINode *Phi, bool Staged) {
+  if (Phi->getFunction() == B.GetInsertBlock()->getParent())
+    return Phi;
+
+  auto *SPhi = cast_or_null<PHINode>(StaticInstructions.lookup(Phi));
+
+  if (SPhi)
+    return SPhi;
+
+  Type *Ty = Staged ? getValuePtrTy() : Phi->getType();
+  SPhi = B.CreatePHI(Ty, Phi->getNumIncomingValues(), Phi->getName());
+  SPhi->moveBefore(B.GetInsertBlock()->getFirstNonPHI());
+
+  for (unsigned IncomingNum = 0; IncomingNum < Phi->getNumIncomingValues();
+       ++IncomingNum) {
+    Value *IncomingV = Phi->getIncomingValue(IncomingNum);
+    BasicBlock *IncomingBB = Phi->getIncomingBlock(IncomingNum);
+
+    if (auto *IncomingI = dyn_cast<Instruction>(IncomingV)) {
+      whenStaged(IncomingI, [=](Instruction *StagedI) {
+        Value *IncomingV =
+            Staged ? StagedI : this->StaticInstructions.lookup(IncomingI);
+
+        SPhi->addIncoming(IncomingV, defineStatic(IncomingBB));
+      });
+    } else {
+      IncomingBB = defineStatic(IncomingBB);
+
+      // Staged value must be live on the edge from the incoming block.
+      if (Staged) {
+        auto IP = B.saveIP();
+
+        if (auto *Term = IncomingBB->getTerminator()) {
+          B.SetInsertPoint(Term);
+        } else {
+          B.SetInsertPoint(IncomingBB);
+        }
+
+        IncomingV = stage(IncomingV);
+
+        B.restoreIP(IP);
+      } else {
+        IncomingV = defineStatic(IncomingV);
+      }
+
+      SPhi->addIncoming(IncomingV, IncomingBB);
+    }
+  }
+
+  StaticInstructions[Phi] = SPhi;
+  return SPhi;
+}
+
+template <typename IRBuilder>
+Value *StagedIRBuilder<IRBuilder>::defineStatic(Value *V) {
+  if (isa<Constant>(V))
+    return V;
+
+  if (auto *A = dyn_cast<Argument>(V)) {
+    return defineStatic(A, nullptr);
+  } else if (auto *BB = dyn_cast<BasicBlock>(V)) {
+    return defineStatic(BB);
+  } else if (auto *I = dyn_cast<Instruction>(V)) {
+    return defineStatic(I);
+  }
+
+  llvm_unreachable("Unsupported value kind");
+}
+
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
+  Instruction *StagedV = StagedValues.lookup(V);
+
+  if (StagedV)
+    return StagedV;
+
+  Value *StaticV = defineStatic(V);
+
+  if (auto *StaticPhi = dyn_cast<PHINode>(StaticV)) {
+    addStagedValue(V, StaticPhi);
+    return StaticPhi;
+  }
+
+  switch (StaticV->getType()->getTypeID()) {
+  case Type::VoidTyID: {
+    StagedV = nullptr;          // No staged value
+    break;
+  }
+
+  case Type::IntegerTyID: {
+    IntegerType *Ty = cast<IntegerType>(StaticV->getType());
+
+    assert(Ty->getBitWidth() <= getUnsignedLongLongIntTy()->getBitWidth() &&
+           "Unsupported integer width");
+
+    Value *ULL = Ty->getBitWidth() < getUnsignedLongLongIntTy()->getBitWidth()
+                     ? B.CreateZExt(StaticV, getUnsignedLongLongIntTy())
+                     : StaticV;
+    StagedV = B.CreateCall(
+        getConstIntFn(), {stage(Ty), ULL, ConstantInt::get(getBoolTy(), false)},
+        StaticV->getName());
+    break;
+  }
+
+  case Type::PointerTyID: {
+    PointerType *Ty = cast<PointerType>(StaticV->getType());
+
+    Value *IntPtr = B.CreatePtrToInt(StaticV, getUnsignedLongLongIntTy());
+
+    StagedV = B.CreateCall(
+        getConstIntToPtrFn(),
+        {B.CreateCall(getConstIntFn(), {stage(IntPtr->getType()), IntPtr,
+                                        ConstantInt::get(getBoolTy(), false)}),
+         stage(Ty)},
+        StaticV->getName());
+    break;
+  }
+  }
+
+  assert((StagedV || StaticV->getType()->isVoidTy()) &&
+         "Unsupported static value");
+  addStagedValue(V, StagedV);
+  return StagedV;
+}
+
+template <typename IRBuilder>
+void StagedIRBuilder<IRBuilder>::addStagedValue(Value *V, Instruction *StagedV) {
   // Call stage callbacks for the value.
   for (auto &SCPair: make_range(StageCallbacks.equal_range(V))) {
     SCPair.second(StagedV);
   }
   StageCallbacks.erase(V);
 
-  return StagedV;
+  StagedValues[V] = StagedV;
 }
 
 template <typename IRBuilder>

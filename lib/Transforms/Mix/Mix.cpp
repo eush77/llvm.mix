@@ -193,6 +193,13 @@ void Mix::buildSpecializer() {
       GlobalValue::ExternalLinkage, F->getName(), StagedModule, "function");
   SB->createBuilder(StagedFunction, "builder");
 
+  // Stage function arguments.
+  for (auto ArgIt = F->arg_begin(), SpecArgIt = SF->arg_begin() + 1;
+       ArgIt != F->arg_end(); ++ArgIt, ++SpecArgIt) {
+    SB->defineStatic(ArgIt, SpecArgIt);
+    SB->stageStatic(ArgIt);
+  }
+
   StaticBasicBlocks.clear();
   StaticBasicBlocks[&F->getEntryBlock()] = &SF->getEntryBlock();
 
@@ -214,6 +221,13 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
   SetVector<BasicBlock *> DynBBs;
   collectDynamicBlocks(BB, DynBBs);
 
+  // Build dynamic terminator in the dynamic predecessor block.
+  if (BB != &F->getEntryBlock()) {
+    std::unique_ptr<Instruction, ValueDeleter> Br(
+        BranchInst::Create(DynBBs.front()));
+    SB->stage(Br.get());
+  }
+
   for (auto *DynBB : DynBBs) {
     SB->positionBuilderAtEnd(SB->stage(DynBB));
 
@@ -233,8 +247,7 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
   if (BTA->getBindingTime(Term) == BindingTimeAnalysis::Static) {
     for (auto *SuccBB : successors(TermBB)) {
       if (!StaticBasicBlocks.count(SuccBB)) {
-        StaticBasicBlocks[SuccBB] =
-            BasicBlock::Create(SF->getContext(), SuccBB->getName(), SF);
+        StaticBasicBlocks[SuccBB] = SB->defineStatic(SuccBB);
       }
     }
   }
@@ -285,7 +298,12 @@ void Mix::collectDynamicBlocks(BasicBlock *BB,
 void Mix::buildInstruction(Instruction *I) const {
   switch (BTA->getBindingTime(I)) {
   case BindingTimeAnalysis::Static:
-    B->Insert(I);
+    if (auto *Phi = dyn_cast<PHINode>(I)) {
+      SB->defineStatic(Phi, BTA->getPhiValueBindingTime(Phi) ==
+                                BindingTimeAnalysis::Dynamic);
+    }
+
+    SB->stageStatic(I);
     break;
 
   case BindingTimeAnalysis::Dynamic:

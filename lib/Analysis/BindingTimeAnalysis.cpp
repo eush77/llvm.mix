@@ -35,6 +35,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Printable.h"
 
+#include <algorithm>
 #include <cassert>
 #include <iterator>
 #include <memory>
@@ -249,6 +250,20 @@ BindingTimeAnalysis::getBindingTime(const Instruction *I) const {
          "Instruction has not been analyzed");
 
   return Iter->second;
+}
+
+BindingTimeAnalysis::BindingTime
+BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
+  auto IsDynamic =
+      std::any_of(Phi->op_begin(), Phi->op_end(), [this](const Value *V) {
+        if (auto *I = dyn_cast<Instruction>(V)) {
+          return getBindingTime(I) == Dynamic;
+        } else {
+          return false;
+        }
+      });
+
+  return IsDynamic ? Dynamic : Static;
 }
 
 // Print name of a local value.

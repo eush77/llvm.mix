@@ -53,6 +53,10 @@ public:
   BindingTime getBindingTime(const BasicBlock *BB) const;
   BindingTime getBindingTime(const Instruction *I) const;
 
+  // Binding time of PHINode always corresponds to the binding time of its
+  // basic block. This function return the binding time of its value.
+  BindingTime getPhiValueBindingTime(const PHINode *Phi) const;
+
   // Get static terminator of a basic block, or null.
   const TerminatorInst *getStaticTerminator(const BasicBlock *BB) const {
     return StaticTerminators.lookup(BB);
