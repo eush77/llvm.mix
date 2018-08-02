@@ -105,7 +105,6 @@ private:
   PointerType *getContextPtrTy() {
     return mix::getContextPtrTy(B.getContext());
   }
-  PointerType *getModulePtrTy() { return mix::getModulePtrTy(B.getContext()); }
   PointerType *getTypePtrTy() { return mix::getTypePtrTy(B.getContext()); }
   PointerType *getValuePtrTy() { return mix::getValuePtrTy(B.getContext()); }
 
@@ -114,6 +113,13 @@ private:
     return B.GetInsertBlock()->getModule()->getOrInsertFunction(
         Name.str(), FunctionType::get(Result, Params, false));
   }
+
+#define CONTEXT B.getContext()
+#define HANDLE_API_FUNCTION(Name, Result, ...)                                 \
+  Constant *get##Name##Fn() {                                                  \
+    return getAPIFunction("LLVM" #Name, Result, {__VA_ARGS__});                \
+  }
+#include "CAPIFunctions.def"
 
   Instruction *stageArgument(Argument *Arg);
   Instruction *stageBasicBlock(BasicBlock *Block);
@@ -138,22 +144,17 @@ private:
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::createModule(const Twine &ModuleId,
                                                       const Twine &InstName) {
-  return B.CreateCall(
-      getAPIFunction("LLVMModuleCreateWithNameInContext", getModulePtrTy(),
-                     {getCharPtrTy(), getContextPtrTy()}),
-      {stage(ModuleId.str()), StagedContext},
-      InstName);
+  return B.CreateCall(getModuleCreateWithNameInContextFn(),
+                      {stage(ModuleId.str()), StagedContext}, InstName);
 }
 
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     FunctionType *Type, GlobalValue::LinkageTypes Linkage, const Twine &Name,
     Instruction *StagedModule, const Twine &InstName) {
-  auto *F = B.CreateCall(
-      getAPIFunction("LLVMAddFunction", getValuePtrTy(),
-                     {getModulePtrTy(), getCharPtrTy(), getTypePtrTy()}),
-      {StagedModule, stage(Name.str()), stage(Type)},
-      InstName);
+  auto *F =
+      B.CreateCall(getAddFunctionFn(),
+                   {StagedModule, stage(Name.str()), stage(Type)}, InstName);
 
   if (Linkage != GlobalValue::ExternalLinkage) {
     setLinkage(F, Linkage);
@@ -214,8 +215,7 @@ StagedIRBuilder<IRBuilder>::setLinkage(Value *Global,
     break;
   }
 
-  return B.CreateCall(getAPIFunction("LLVMSetLinkage", B.getVoidTy(),
-                                     {getValuePtrTy(), getLinkageTy()}),
+  return B.CreateCall(getSetLinkageFn(),
                       {Global, ConstantInt::get(getLinkageTy(), CAPILinkage)});
 }
 
@@ -225,9 +225,7 @@ Instruction *StagedIRBuilder<IRBuilder>::createBuilder(Instruction *SF,
   assert(!StagedBuilder && "Staged IRBuilder is already created");
 
   auto *SB =
-      B.CreateCall(getAPIFunction("LLVMCreateBuilderInContext",
-                                  getBuilderPtrTy(), {getContextPtrTy()}),
-                   {StagedContext}, InstName);
+      B.CreateCall(getCreateBuilderInContextFn(), StagedContext, InstName);
 
   StagedBuilder = SB;
   StagedFunction = SF;
@@ -238,16 +236,13 @@ template <typename IRBuilder>
 Instruction *
 StagedIRBuilder<IRBuilder>::positionBuilderAtEnd(Instruction *StagedBlock,
                                                  const Twine &InstName) {
-  return B.CreateCall(getAPIFunction("LLVMPositionBuilderAtEnd", B.getVoidTy(),
-                                     {getBuilderPtrTy(), getBasicBlockPtrTy()}),
-                      {StagedBuilder, StagedBlock}, InstName);
+  return B.CreateCall(getPositionBuilderAtEndFn(), {StagedBuilder, StagedBlock},
+                      InstName);
 }
 
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::disposeBuilder(const Twine &InstName) {
-  return B.CreateCall(
-      getAPIFunction("LLVMDisposeBuilder", B.getVoidTy(), {getBuilderPtrTy()}),
-      {StagedBuilder}, InstName);
+  return B.CreateCall(getDisposeBuilderFn(), StagedBuilder, InstName);
 }
 
 template <typename IRBuilder>
@@ -260,9 +255,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 
   switch (Ty->getTypeID()) {
   case Type::VoidTyID:
-    StagedTy = B.CreateCall(getAPIFunction("LLVMVoidTypeInContext",
-                                           getTypePtrTy(), {getContextPtrTy()}),
-                            {StagedContext}, InstName);
+    StagedTy = B.CreateCall(getVoidTypeInContextFn(), StagedContext, InstName);
     break;
 
   case Type::IntegerTyID: {
@@ -279,13 +272,12 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
           getAPIFunction(Twine("LLVMInt") + std::to_string(BitWidth) +
                              "TypeInContext",
                          getTypePtrTy(), {getContextPtrTy()}),
-          {StagedContext}, InstName);
+          StagedContext, InstName);
       break;
 
     default:
       StagedTy = B.CreateCall(
-          getAPIFunction("LLVMIntTypeInContext", getTypePtrTy(),
-                         {getContextPtrTy(), getUnsignedIntTy()}),
+          getIntTypeInContextFn(),
           {StagedContext, ConstantInt::get(getUnsignedIntTy(), BitWidth)},
           InstName);
     }
@@ -309,14 +301,12 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
       Params = ConstantPointerNull::get(PointerType::getUnqual(getTypePtrTy()));
     }
 
-    StagedTy = B.CreateCall(
-        getAPIFunction("LLVMFunctionType", getTypePtrTy(),
-                       {getTypePtrTy(), PointerType::getUnqual(getTypePtrTy()),
-                        getUnsignedIntTy(), getBoolTy()}),
-        {stage(FT->getReturnType()), Params,
-         ConstantInt::get(getUnsignedIntTy(), FT->getNumParams()),
-         ConstantInt::get(getBoolTy(), false)},
-        InstName);
+    StagedTy =
+        B.CreateCall(getFunctionTypeFn(),
+                     {stage(FT->getReturnType()), Params,
+                      ConstantInt::get(getUnsignedIntTy(), FT->getNumParams()),
+                      ConstantInt::get(getBoolTy(), false)},
+                     InstName);
     break;
   }
   }
@@ -330,19 +320,16 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageArgument(Argument *Arg) {
   return B.CreateCall(
-      getAPIFunction("LLVMGetParam", getValuePtrTy(),
-                     {getValuePtrTy(), getUnsignedIntTy()}),
+      getGetParamFn(),
       {StagedFunction, ConstantInt::get(getUnsignedIntTy(), Arg->getArgNo())},
       Arg->getName());
 }
 
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageBasicBlock(BasicBlock *Block) {
-  return B.CreateCall(
-      getAPIFunction("LLVMAppendBasicBlockInContext", getBasicBlockPtrTy(),
-                     {getContextPtrTy(), getValuePtrTy(), getCharPtrTy()}),
-      {StagedContext, StagedFunction, stage(Block->getName())},
-      Block->getName());
+  return B.CreateCall(getAppendBasicBlockInContextFn(),
+                      {StagedContext, StagedFunction, stage(Block->getName())},
+                      Block->getName());
 }
 
 template <typename IRBuilder>
@@ -353,9 +340,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageConstant(Constant *Const,
            "Unsupported integer width");
 
     return B.CreateCall(
-        getAPIFunction(
-            "LLVMConstInt", getValuePtrTy(),
-            {getTypePtrTy(), getUnsignedLongLongIntTy(), getBoolTy()}),
+        getConstIntFn(),
         {stage(Const->getType()),
          ConstantInt::get(getUnsignedLongLongIntTy(), ConstInt->getZExtValue()),
          ConstantInt::get(getBoolTy(), false)},
@@ -383,12 +368,7 @@ void StagedIRBuilder<IRBuilder>::stageIncomingList(PHINode *Phi,
                  B.CreateStore(stage(Phi->getIncomingBlock(IncomingNum)),
                                IncomingBlockAlloca);
 
-                 B.CreateCall(getAPIFunction(
-                                  "LLVMAddIncoming", B.getVoidTy(),
-                                  {getValuePtrTy(),
-                                   PointerType::getUnqual(getValuePtrTy()),
-                                   PointerType::getUnqual(getBasicBlockPtrTy()),
-                                   getUnsignedIntTy()}),
+                 B.CreateCall(getAddIncomingFn(),
                               {StagedPhi, IncomingValueAlloca,
                                IncomingBlockAlloca,
                                ConstantInt::get(getUnsignedIntTy(), 1)});
