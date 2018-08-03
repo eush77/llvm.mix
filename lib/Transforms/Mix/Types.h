@@ -21,11 +21,13 @@ namespace llvm {
 class IntegerType;
 class LLVMContext;
 class PointerType;
+class Type;
 
 namespace mix {
 
 // C types.
 PointerType *getCharPtrTy(LLVMContext &);
+Type *getDoubleTy(LLVMContext &);
 IntegerType *getUnsignedIntTy(LLVMContext &);
 IntegerType *getUnsignedLongLongIntTy(LLVMContext &);
 

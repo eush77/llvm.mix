@@ -93,6 +93,7 @@ public:
   }
 
 private:
+  Type *getDoubleTy() { return mix::getDoubleTy(B.getContext()); }
   IntegerType *getBoolTy() { return mix::getBoolTy(B.getContext()); }
   IntegerType *getIntPredicateTy() {
     return mix::getIntPredicateTy(B.getContext());
@@ -270,6 +271,33 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
   switch (Ty->getTypeID()) {
   case Type::VoidTyID:
     StagedTy = B.CreateCall(getVoidTypeInContextFn(), StagedContext, InstName);
+    break;
+
+  case Type::HalfTyID:
+    StagedTy = B.CreateCall(getHalfTypeInContextFn(), StagedContext, InstName);
+    break;
+
+  case Type::FloatTyID:
+    StagedTy = B.CreateCall(getFloatTypeInContextFn(), StagedContext, InstName);
+    break;
+
+  case Type::DoubleTyID:
+    StagedTy =
+        B.CreateCall(getDoubleTypeInContextFn(), StagedContext, InstName);
+    break;
+
+  case Type::X86_FP80TyID:
+    StagedTy =
+        B.CreateCall(getX86FP80TypeInContextFn(), StagedContext, InstName);
+    break;
+
+  case Type::FP128TyID:
+    StagedTy = B.CreateCall(getFP128TypeInContextFn(), StagedContext, InstName);
+    break;
+
+  case Type::PPC_FP128TyID:
+    StagedTy =
+        B.CreateCall(getPPCFP128TypeInContextFn(), StagedContext, InstName);
     break;
 
   case Type::IntegerTyID: {
@@ -685,6 +713,24 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
   switch (StaticV->getType()->getTypeID()) {
   case Type::VoidTyID: {
     StagedV = nullptr;          // No staged value
+    break;
+  }
+
+  case Type::HalfTyID:
+  case Type::FloatTyID:
+  case Type::DoubleTyID: {
+    Type *Ty = StaticV->getType();
+
+    assert(Ty->getPrimitiveSizeInBits() <=
+               getDoubleTy()->getPrimitiveSizeInBits() &&
+           "Unsupported floating-point type width");
+
+    Value *Double =
+        Ty->getPrimitiveSizeInBits() < getDoubleTy()->getPrimitiveSizeInBits()
+            ? B.CreateFPExt(StaticV, getDoubleTy())
+            : StaticV;
+    StagedV =
+        B.CreateCall(getConstRealFn(), {stage(Ty), Double}, StaticV->getName());
     break;
   }
 

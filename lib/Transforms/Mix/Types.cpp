@@ -45,6 +45,24 @@ PointerType *mix::getCharPtrTy(LLVMContext &Context) {
   return PointerType::getUnqual(getIntegerType<char>(Context));
 }
 
+Type *mix::getDoubleTy(LLVMContext &Context) {
+  switch (sizeof(double) * CHAR_BIT) {
+  case 16:
+    return Type::getHalfTy(Context);
+
+  case 32:
+    return Type::getFloatTy(Context);
+
+  case 64:
+    return Type::getDoubleTy(Context);
+
+  case 128:
+    return Type::getFP128Ty(Context);
+  }
+
+  llvm_unreachable("Unsupported double type width");
+}
+
 IntegerType *mix::getUnsignedIntTy(LLVMContext &Context) {
   return getIntegerType<unsigned int>(Context);
 }
