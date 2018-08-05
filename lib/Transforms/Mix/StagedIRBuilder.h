@@ -36,6 +36,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 
 #include <cassert>
 #include <functional>
@@ -737,15 +738,30 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
   case Type::IntegerTyID: {
     IntegerType *Ty = cast<IntegerType>(StaticV->getType());
 
-    assert(Ty->getBitWidth() <= getUnsignedLongLongIntTy()->getBitWidth() &&
-           "Unsupported integer width");
+    if (Ty->getBitWidth() <= getUnsignedLongLongIntTy()->getBitWidth()) {
+      Value *ULL = Ty->getBitWidth() < getUnsignedLongLongIntTy()->getBitWidth()
+                       ? B.CreateZExt(StaticV, getUnsignedLongLongIntTy())
+                       : StaticV;
+      StagedV =
+          B.CreateCall(getConstIntFn(),
+                       {stage(Ty), ULL, ConstantInt::get(getBoolTy(), false)},
+                       StaticV->getName());
+    } else {
+      unsigned NumWords = alignTo(Ty->getBitWidth(), 64) / 64;
+      Value *Words = B.CreateAlloca(B.getInt64Ty(), B.getInt32(NumWords));
+      Value *Val = StaticV;
 
-    Value *ULL = Ty->getBitWidth() < getUnsignedLongLongIntTy()->getBitWidth()
-                     ? B.CreateZExt(StaticV, getUnsignedLongLongIntTy())
-                     : StaticV;
-    StagedV = B.CreateCall(
-        getConstIntFn(), {stage(Ty), ULL, ConstantInt::get(getBoolTy(), false)},
-        StaticV->getName());
+      for (unsigned WN = 0; WN < NumWords; ++WN) {
+        B.CreateStore(B.CreateTrunc(Val, B.getInt64Ty()),
+                      B.CreateGEP(Words, B.getInt32(WN)));
+        Val = B.CreateLShr(Val, ConstantInt::get(Ty, 64));
+      }
+
+      StagedV = B.CreateCall(
+          getConstIntOfArbitraryPrecisionFn(),
+          {stage(Ty), ConstantInt::get(getUnsignedIntTy(), NumWords), Words},
+          StaticV->getName());
+    }
     break;
   }
 
