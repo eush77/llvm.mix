@@ -47,6 +47,14 @@ define double @double() {
   ret double 1.25
 }
 
+; CHECK-LABEL: define fp128 @fp128()
+; CHECK-LABEL: define private %struct.LLVMOpaqueModule* @fp128.mix
+; CHECK-STAGE-LABEL: define fp128 @fp128()
+define fp128 @fp128() {
+  ; CHECK-STAGE: ret fp128 0xL{{0+}}AD
+  ret fp128 0xL0AD
+}
+
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %px = alloca i32
@@ -61,6 +69,8 @@ define void @main() {
   call void @LLVMDumpModule(i8* %half)
   %double = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"double")
   call void @LLVMDumpModule(i8* %double)
+  %fp128 = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"fp128")
+  call void @LLVMDumpModule(i8* %fp128)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }

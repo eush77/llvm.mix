@@ -55,6 +55,7 @@ HANDLE_API_FUNCTION(AddIncoming, VOID, IR_VALUE, IR_VALUE->getPointerTo(),
                     IR_BASICBLOCK->getPointerTo(), UINT)
 HANDLE_API_FUNCTION(AppendBasicBlockInContext, IR_BASICBLOCK, IR_CONTEXT,
                     IR_VALUE, CHAR_PTR)
+HANDLE_API_FUNCTION(ConstBitCast, IR_VALUE, IR_VALUE, IR_TYPE)
 HANDLE_API_FUNCTION(ConstInt, IR_VALUE, IR_TYPE, ULLINT, LLVMBOOL)
 HANDLE_API_FUNCTION(ConstIntOfArbitraryPrecision, IR_VALUE, IR_TYPE, UINT,
                     ULLINT->getPointerTo())

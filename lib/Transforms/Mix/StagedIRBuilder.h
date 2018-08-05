@@ -719,27 +719,33 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
 
   case Type::HalfTyID:
   case Type::FloatTyID:
-  case Type::DoubleTyID: {
+  case Type::DoubleTyID:
+  case Type::X86_FP80TyID:
+  case Type::FP128TyID:
+  case Type::PPC_FP128TyID: {
     Type *Ty = StaticV->getType();
+    unsigned BitWidth = Ty->getPrimitiveSizeInBits();
 
-    assert(Ty->getPrimitiveSizeInBits() <=
-               getDoubleTy()->getPrimitiveSizeInBits() &&
-           "Unsupported floating-point type width");
-
-    Value *Double =
-        Ty->getPrimitiveSizeInBits() < getDoubleTy()->getPrimitiveSizeInBits()
-            ? B.CreateFPExt(StaticV, getDoubleTy())
-            : StaticV;
-    StagedV =
-        B.CreateCall(getConstRealFn(), {stage(Ty), Double}, StaticV->getName());
+    if (BitWidth <= getDoubleTy()->getPrimitiveSizeInBits()) {
+      Value *Double = BitWidth < getDoubleTy()->getPrimitiveSizeInBits()
+                          ? B.CreateFPExt(StaticV, getDoubleTy())
+                          : StaticV;
+      StagedV = B.CreateCall(getConstRealFn(), {stage(Ty), Double},
+                             StaticV->getName());
+    } else {
+      Value *Int = stageStatic(B.CreateBitCast(StaticV, B.getIntNTy(BitWidth)));
+      StagedV = B.CreateCall(getConstBitCastFn(), {Int, stage(Ty)},
+                             StaticV->getName());
+    }
     break;
   }
 
   case Type::IntegerTyID: {
     IntegerType *Ty = cast<IntegerType>(StaticV->getType());
+    unsigned BitWidth = Ty->getBitWidth();
 
-    if (Ty->getBitWidth() <= getUnsignedLongLongIntTy()->getBitWidth()) {
-      Value *ULL = Ty->getBitWidth() < getUnsignedLongLongIntTy()->getBitWidth()
+    if (BitWidth <= getUnsignedLongLongIntTy()->getBitWidth()) {
+      Value *ULL = BitWidth < getUnsignedLongLongIntTy()->getBitWidth()
                        ? B.CreateZExt(StaticV, getUnsignedLongLongIntTy())
                        : StaticV;
       StagedV =
@@ -747,7 +753,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
                        {stage(Ty), ULL, ConstantInt::get(getBoolTy(), false)},
                        StaticV->getName());
     } else {
-      unsigned NumWords = alignTo(Ty->getBitWidth(), 64) / 64;
+      unsigned NumWords = alignTo(BitWidth, 64) / 64;
       Value *Words = B.CreateAlloca(B.getInt64Ty(), B.getInt32(NumWords));
       Value *Val = StaticV;
 
