@@ -1148,6 +1148,13 @@ Currently, only the following parameter attributes are defined:
     ``dereferenceable(<n>)``). This attribute may only be applied to
     pointer typed parameters.
 
+``stage(<n>)``
+    This attribute sets binding-time stage of the parameter. Stage 0 is the
+    current stage and the default. Stage 1 is the next stage (after one
+    compilation). Stage 2 is the stage after that, and so on. The attribute is
+    only used in binding-time analysis and when the function is specialized
+    with :ref:`llvm.mix <_int_mix>`
+
 ``swiftself``
     This indicates that the parameter is the self/context parameter. This is not
     a valid attribute for return values and can only be applied to one
@@ -12373,6 +12380,8 @@ Mixed Execution Intrinsics
 
 These intrinsics provide access to the Mix runtime for run-time function
 specialization.
+
+.. _int_mix:
 
 '``llvm.mix``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^

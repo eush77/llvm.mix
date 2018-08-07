@@ -114,6 +114,10 @@ unsigned Argument::getParamAlignment() const {
   return getParent()->getParamAlignment(getArgNo());
 }
 
+unsigned Argument::getStage() const {
+  return getParent()->getParamStage(getArgNo());
+}
+
 uint64_t Argument::getDereferenceableBytes() const {
   assert(getType()->isPointerTy() &&
          "Only pointers have dereferenceable bytes");

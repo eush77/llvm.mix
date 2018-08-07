@@ -125,6 +125,7 @@ public:
     assert((Kind == Attribute::Alignment || Kind == Attribute::StackAlignment ||
             Kind == Attribute::Dereferenceable ||
             Kind == Attribute::DereferenceableOrNull ||
+            Kind == Attribute::Stage ||
             Kind == Attribute::AllocSize) &&
            "Wrong kind for int attribute!");
   }
@@ -186,6 +187,7 @@ public:
 
   unsigned getAlignment() const;
   unsigned getStackAlignment() const;
+  unsigned getStage() const;
   uint64_t getDereferenceableBytes() const;
   uint64_t getDereferenceableOrNullBytes() const;
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;

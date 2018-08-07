@@ -96,6 +96,7 @@ public:
   /// alignment set.
   static Attribute getWithAlignment(LLVMContext &Context, uint64_t Align);
   static Attribute getWithStackAlignment(LLVMContext &Context, uint64_t Align);
+  static Attribute getWithStage(LLVMContext &Context, unsigned Stage);
   static Attribute getWithDereferenceableBytes(LLVMContext &Context,
                                               uint64_t Bytes);
   static Attribute getWithDereferenceableOrNullBytes(LLVMContext &Context,
@@ -147,6 +148,9 @@ public:
   /// \brief Returns the stack alignment field of an attribute as a byte
   /// alignment value.
   unsigned getStackAlignment() const;
+
+  /// \brief Returns the value of a stage attribute.
+  unsigned getStage() const;
 
   /// \brief Returns the number of dereferenceable bytes from the
   /// dereferenceable attribute.
@@ -274,6 +278,7 @@ public:
 
   unsigned getAlignment() const;
   unsigned getStackAlignment() const;
+  unsigned getStage() const;
   uint64_t getDereferenceableBytes() const;
   uint64_t getDereferenceableOrNullBytes() const;
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;
@@ -592,6 +597,9 @@ public:
   /// \brief Get the stack alignment.
   unsigned getStackAlignment(unsigned Index) const;
 
+  /// \brief Get the binding-time stage.
+  unsigned getStage(unsigned Index) const;
+
   /// \brief Get the number of dereferenceable bytes (or zero if unknown).
   uint64_t getDereferenceableBytes(unsigned Index) const;
 
@@ -688,6 +696,7 @@ class AttrBuilder {
   uint64_t DerefBytes = 0;
   uint64_t DerefOrNullBytes = 0;
   uint64_t AllocSizeArgs = 0;
+  unsigned Stage = 0;
 
 public:
   AttrBuilder() = default;
@@ -761,6 +770,9 @@ public:
   /// dereferenceable_or_null attribute exists (zero is returned otherwise).
   uint64_t getDereferenceableOrNullBytes() const { return DerefOrNullBytes; }
 
+  /// \brief Retrieve the binding-time stage.
+  unsigned getStage() const { return Stage; }
+
   /// Retrieve the allocsize args, if the allocsize attribute exists.  If it
   /// doesn't exist, pair(0, 0) is returned.
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;
@@ -788,6 +800,9 @@ public:
   /// Add an allocsize attribute, using the representation returned by
   /// Attribute.getIntValue().
   AttrBuilder &addAllocSizeAttrFromRawRepr(uint64_t RawAllocSizeRepr);
+
+  /// \brief Add a stage attribute.
+  AttrBuilder &addStageAttr(unsigned Stage);
 
   /// \brief Return true if the builder contains no target-independent
   /// attributes.

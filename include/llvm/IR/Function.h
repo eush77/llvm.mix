@@ -377,6 +377,11 @@ public:
     return AttributeSets.getParamAlignment(ArgNo);
   }
 
+  /// @brief Extract binding-time stage for a parameter.
+  unsigned getParamStage(unsigned ArgNo) const {
+    return AttributeSets.getStage(ArgNo);
+  }
+
   /// @brief Extract the number of dereferenceable bytes for a call or
   /// parameter (0=unknown).
   /// @param i AttributeList index, referring to a return value or argument.

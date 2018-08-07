@@ -78,6 +78,17 @@ unpackAllocSizeArgs(uint64_t Num) {
   return std::make_pair(ElemSizeArg, NumElemsArg);
 }
 
+// Zero is a valid value for a stage attribute, but attributes with value 0
+// are implicitly created as EnumAttributes, not IntAttributes. Pack values of
+// a stage attribute as non-zero integers to work around that.
+static uint64_t packStage(unsigned Stage) {
+  return Stage + 1;
+}
+
+static unsigned unpackStage(uint64_t Num) {
+  return Num - 1;
+}
+
 Attribute Attribute::get(LLVMContext &Context, Attribute::AttrKind Kind,
                          uint64_t Val) {
   LLVMContextImpl *pImpl = Context.pImpl;
@@ -133,6 +144,10 @@ Attribute Attribute::getWithStackAlignment(LLVMContext &Context,
   assert(isPowerOf2_32(Align) && "Alignment must be a power of two.");
   assert(Align <= 0x100 && "Alignment too large.");
   return get(Context, StackAlignment, Align);
+}
+
+Attribute Attribute::getWithStage(LLVMContext &Context, unsigned Stage){
+  return get(Context, Attribute::Stage, packStage(Stage));
 }
 
 Attribute Attribute::getWithDereferenceableBytes(LLVMContext &Context,
@@ -218,6 +233,12 @@ unsigned Attribute::getStackAlignment() const {
   assert(hasAttribute(Attribute::StackAlignment) &&
          "Trying to get alignment from non-alignment attribute!");
   return pImpl->getValueAsInt();
+}
+
+unsigned Attribute::getStage() const {
+  assert(hasAttribute(Attribute::Stage) &&
+         "Trying to get stage number from non-stage attribute!");
+  return unpackStage(pImpl->getValueAsInt());
 }
 
 uint64_t Attribute::getDereferenceableBytes() const {
@@ -379,6 +400,10 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
 
   if (hasAttribute(Attribute::DereferenceableOrNull))
     return AttrWithBytesToString("dereferenceable_or_null");
+
+  if (hasAttribute(Attribute::Stage)) {
+    return "stage(" + utostr(getStage()) + ')';
+  }
 
   if (hasAttribute(Attribute::AllocSize)) {
     unsigned ElemSize;
@@ -596,6 +621,10 @@ unsigned AttributeSet::getStackAlignment() const {
   return SetNode ? SetNode->getStackAlignment() : 0;
 }
 
+unsigned AttributeSet::getStage() const {
+  return SetNode ? SetNode->getStage() : 0;
+}
+
 uint64_t AttributeSet::getDereferenceableBytes() const {
   return SetNode ? SetNode->getDereferenceableBytes() : 0;
 }
@@ -693,6 +722,9 @@ AttributeSetNode *AttributeSetNode::get(LLVMContext &C, const AttrBuilder &B) {
     case Attribute::StackAlignment:
       Attr = Attribute::getWithStackAlignment(C, B.getStackAlignment());
       break;
+    case Attribute::Stage:
+      Attr = Attribute::getWithStage(C, B.getStage());
+      break;
     case Attribute::Dereferenceable:
       Attr = Attribute::getWithDereferenceableBytes(
           C, B.getDereferenceableBytes());
@@ -753,6 +785,13 @@ unsigned AttributeSetNode::getStackAlignment() const {
   for (Attribute I : *this)
     if (I.hasAttribute(Attribute::StackAlignment))
       return I.getStackAlignment();
+  return 0;
+}
+
+unsigned AttributeSetNode::getStage() const {
+  for (Attribute I : *this)
+    if (I.hasAttribute(Attribute::Stage))
+      return I.getStage();
   return 0;
 }
 
@@ -1250,6 +1289,10 @@ unsigned AttributeList::getStackAlignment(unsigned Index) const {
   return getAttributes(Index).getStackAlignment();
 }
 
+unsigned AttributeList::getStage(unsigned Index) const {
+  return getAttributes(Index).getStage();
+}
+
 uint64_t AttributeList::getDereferenceableBytes(unsigned Index) const {
   return getAttributes(Index).getDereferenceableBytes();
 }
@@ -1433,6 +1476,12 @@ AttrBuilder &AttrBuilder::addDereferenceableOrNullAttr(uint64_t Bytes) {
 
   Attrs[Attribute::DereferenceableOrNull] = true;
   DerefOrNullBytes = Bytes;
+  return *this;
+}
+
+AttrBuilder &AttrBuilder::addStageAttr(unsigned Stage) {
+  Attrs[Attribute::Stage] = true;
+  this->Stage = Stage;
   return *this;
 }
 

@@ -79,6 +79,9 @@ public:
   /// If this is a byval or inalloca argument, return its alignment.
   unsigned getParamAlignment() const;
 
+  /// Return binding-time stage of this argument.
+  unsigned getStage() const;
+
   /// Return true if this argument has the nest attribute.
   bool hasNestAttr() const;
 

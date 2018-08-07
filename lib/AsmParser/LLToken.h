@@ -215,6 +215,7 @@ enum Kind {
   kw_sret,
   kw_sanitize_thread,
   kw_sanitize_memory,
+  kw_stage,
   kw_strictfp,
   kw_swifterror,
   kw_swiftself,

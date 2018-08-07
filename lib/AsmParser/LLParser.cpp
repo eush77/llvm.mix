@@ -1172,6 +1172,7 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
     case lltok::kw_nonnull:
     case lltok::kw_returned:
     case lltok::kw_sret:
+    case lltok::kw_stage:
     case lltok::kw_swifterror:
     case lltok::kw_swiftself:
       HaveError |=
@@ -1434,6 +1435,13 @@ bool LLParser::ParseOptionalParamAttrs(AttrBuilder &B) {
       B.addDereferenceableOrNullAttr(Bytes);
       continue;
     }
+    case lltok::kw_stage: {
+      unsigned StageNum;
+      if (ParseOptionalStage(StageNum))
+        return true;
+      B.addStageAttr(StageNum);
+      continue;
+    }
     case lltok::kw_inalloca:        B.addAttribute(Attribute::InAlloca); break;
     case lltok::kw_inreg:           B.addAttribute(Attribute::InReg); break;
     case lltok::kw_nest:            B.addAttribute(Attribute::Nest); break;
@@ -1537,6 +1545,7 @@ bool LLParser::ParseOptionalReturnAttrs(AttrBuilder &B) {
     case lltok::kw_nocapture:
     case lltok::kw_returned:
     case lltok::kw_sret:
+    case lltok::kw_stage:
     case lltok::kw_swifterror:
     case lltok::kw_swiftself:
       HaveError |= Error(Lex.getLoc(), "invalid use of parameter-only attribute");
@@ -1894,6 +1903,27 @@ bool LLParser::ParseOptionalDerefAttrBytes(lltok::Kind AttrKind,
     return Error(ParenLoc, "expected ')'");
   if (!Bytes)
     return Error(DerefLoc, "dereferenceable bytes must be non-zero");
+  return false;
+}
+
+/// ParseOptionalStage
+///   ::= /* empty */
+///   ::= stage '(' 4 ')'
+bool LLParser::ParseOptionalStage(unsigned &StageNum) {
+  StageNum = 0;
+  if (!EatIfPresent(lltok::kw_stage))
+    return false;
+  LocTy ParenLoc = Lex.getLoc();
+  if (!EatIfPresent(lltok::lparen))
+    return Error(ParenLoc, "expected '('");
+  {
+    uint32_t Val;
+    if (ParseUInt32(Val)) return true;
+    StageNum = Val;
+  }
+  ParenLoc = Lex.getLoc();
+  if (!EatIfPresent(lltok::rparen))
+    return Error(ParenLoc, "expected ')'");
   return false;
 }
 

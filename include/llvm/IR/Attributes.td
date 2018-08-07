@@ -167,6 +167,9 @@ def SanitizeMemory : EnumAttr<"sanitize_memory">;
 /// HWAddressSanitizer is on.
 def SanitizeHWAddress : EnumAttr<"sanitize_hwaddress">;
 
+/// Binding-time stage.
+def Stage : EnumAttr<"stage">;
+
 /// Argument is swift error.
 def SwiftError : EnumAttr<"swifterror">;
 
