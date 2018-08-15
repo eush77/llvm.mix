@@ -78,17 +78,6 @@ unpackAllocSizeArgs(uint64_t Num) {
   return std::make_pair(ElemSizeArg, NumElemsArg);
 }
 
-// Zero is a valid value for a stage attribute, but attributes with value 0
-// are implicitly created as EnumAttributes, not IntAttributes. Pack values of
-// a stage attribute as non-zero integers to work around that.
-static uint64_t packStage(unsigned Stage) {
-  return Stage + 1;
-}
-
-static unsigned unpackStage(uint64_t Num) {
-  return Num - 1;
-}
-
 Attribute Attribute::get(LLVMContext &Context, Attribute::AttrKind Kind,
                          uint64_t Val) {
   LLVMContextImpl *pImpl = Context.pImpl;
@@ -147,7 +136,8 @@ Attribute Attribute::getWithStackAlignment(LLVMContext &Context,
 }
 
 Attribute Attribute::getWithStage(LLVMContext &Context, unsigned Stage){
-  return get(Context, Attribute::Stage, packStage(Stage));
+  assert(Stage && "Stage must be non-zero.");
+  return get(Context, Attribute::Stage, Stage);
 }
 
 Attribute Attribute::getWithDereferenceableBytes(LLVMContext &Context,
@@ -238,7 +228,7 @@ unsigned Attribute::getStackAlignment() const {
 unsigned Attribute::getStage() const {
   assert(hasAttribute(Attribute::Stage) &&
          "Trying to get stage number from non-stage attribute!");
-  return unpackStage(pImpl->getValueAsInt());
+  return pImpl->getValueAsInt();
 }
 
 uint64_t Attribute::getDereferenceableBytes() const {
@@ -401,9 +391,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
   if (hasAttribute(Attribute::DereferenceableOrNull))
     return AttrWithBytesToString("dereferenceable_or_null");
 
-  if (hasAttribute(Attribute::Stage)) {
-    return "stage(" + utostr(getStage()) + ')';
-  }
+  if (hasAttribute(Attribute::Stage))
+    return AttrWithBytesToString("stage");
 
   if (hasAttribute(Attribute::AllocSize)) {
     unsigned ElemSize;
@@ -1480,6 +1469,9 @@ AttrBuilder &AttrBuilder::addDereferenceableOrNullAttr(uint64_t Bytes) {
 }
 
 AttrBuilder &AttrBuilder::addStageAttr(unsigned Stage) {
+  if (Stage == 0)
+    return *this;
+
   Attrs[Attribute::Stage] = true;
   this->Stage = Stage;
   return *this;
