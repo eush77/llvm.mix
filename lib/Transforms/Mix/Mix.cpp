@@ -244,7 +244,7 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
   }
 
   // Create new successor static blocks.
-  if (BTA->getBindingTime(Term) == BindingTimeAnalysis::Static) {
+  if (BTA->getStage(Term) == 0) {
     for (auto *SuccBB : successors(TermBB)) {
       if (!StaticBasicBlocks.count(SuccBB)) {
         StaticBasicBlocks[SuccBB] = SB->defineStatic(SuccBB);
@@ -260,7 +260,7 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
 // series.
 void Mix::collectDynamicBlocks(BasicBlock *BB,
                                SetVector<BasicBlock *> &DynBBs) const {
-  assert(BTA->getBindingTime(BB) == BindingTimeAnalysis::Static);
+  assert(BTA->getStage(BB) == 0);
 
   // If DynBBs already contains the starting block, move it to the end, so
   // that we can start iteration at the of the collection.
@@ -278,7 +278,7 @@ void Mix::collectDynamicBlocks(BasicBlock *BB,
     TerminatorInst *Term = DynBB->getTerminator();
 
     // Check if static terminator is reached.
-    if (BTA->getBindingTime(Term) == BindingTimeAnalysis::Static) {
+    if (BTA->getStage(Term) == 0) {
       assert(!TermBB &&
              "Multiple static terminators reachable from a static block");
       TermBB = DynBB;
@@ -296,19 +296,21 @@ void Mix::collectDynamicBlocks(BasicBlock *BB,
 }
 
 void Mix::buildInstruction(Instruction *I) const {
-  switch (BTA->getBindingTime(I)) {
-  case BindingTimeAnalysis::Static:
+  switch (BTA->getStage(I)) {
+  case 0:
     if (auto *Phi = dyn_cast<PHINode>(I)) {
-      SB->defineStatic(Phi, BTA->getPhiValueBindingTime(Phi) ==
-                                BindingTimeAnalysis::Dynamic);
+      SB->defineStatic(Phi, BTA->getPhiValueBindingTime(Phi) == 1);
     }
 
     SB->stageStatic(I);
     break;
 
-  case BindingTimeAnalysis::Dynamic:
+  case 1:
     SB->stage(I);
     break;
+
+  default:
+    llvm_unreachable("Unsupported instruction stage");
   }
 }
 

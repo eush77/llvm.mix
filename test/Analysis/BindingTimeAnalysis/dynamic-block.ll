@@ -1,16 +1,19 @@
-; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=static --implicit-check-not=sbb
+; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=stage
 
 ; CHECK-LABEL: define void @dynamic-block(i1* %pb)
 define void @dynamic-block(i1* %pb) {
-entry:
-  br label %header
+; CHECK-LABEL: {{^}}entry:
+entry:                          ; CHECK-NEXT: stage(0)
+  br label %header              ; CHECK-NEXT: stage(1)
 
-header:
-  %n.0 = phi i32 [ 0, %entry ], [ %n.1, %header]
-  %n.1 = add i32 %n.0, 1
-  %b = load i1, i1* %pb
-  br i1 %b, label %exit, label %header
+; CHECK-LABEL: {{^}}header:
+header:                                          ; CHECK-NEXT: stage(1)
+  %n.0 = phi i32 [ 0, %entry ], [ %n.1, %header] ; CHECK-NEXT: stage(1)
+  %n.1 = add i32 %n.0, 1                         ; CHECK-NEXT: stage(1)
+  %b = load i1, i1* %pb                          ; CHECK-NEXT: stage(1)
+  br i1 %b, label %exit, label %header           ; CHECK-NEXT: stage(1)
 
-exit:
-  ret void
+; CHECK-LABEL: {{^}}exit:
+exit:                           ; CHECK-NEXT: stage(1)
+  ret void                      ; CHECK-NEXT: stage(1)
 }

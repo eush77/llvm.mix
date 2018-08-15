@@ -13,13 +13,16 @@
 
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 
+#include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Argument.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/Constant.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -32,238 +35,265 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Printable.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 #include <algorithm>
 #include <cassert>
 #include <iterator>
 #include <memory>
-#include <queue>
-#include <string>
+#include <numeric>
+#include <utility>
 
 using namespace llvm;
-using namespace std::literals::string_literals;
 
 #define DEBUG_TYPE "bta"
 
-namespace {
-
-bool isPossiblyStaticTerminator(const Instruction *I) {
-  if (!I->isTerminator())
-    return false;
+// True if the instruction must be evaluated at the last stage.
+bool BindingTimeAnalysis::isLastStage(const Instruction *I) const {
+  if (I->mayHaveSideEffects() || I->mayReadFromMemory()) {
+    return true;
+  }
 
   switch (I->getOpcode()) {
   case Instruction::Br:
-  case Instruction::Switch:
   case Instruction::IndirectBr:
+  case Instruction::Switch:
+    return false;
+
+  case Instruction::Alloca:
+  case Instruction::Call:
+  case Instruction::Invoke:
     return true;
 
   default:
-    return false;
+    return I->getType()->isVoidTy();
   }
 }
 
-} // namespace
+// Update the stage of value, returning true if the update changed the current
+// stage, false otherwise.
+bool BindingTimeAnalysis::updateStage(const Value *V, unsigned Stage) {
+  unsigned &CurrentStage = StageMap[V];
 
-// Push dynamic roots to MarkedInstructions queue and make everything else
-// static.
-void BindingTimeAnalysis::initializeBindingTimeDivision(const Function &F) {
-  MarkedInstructions.clear();
-  NextMarkedInstructionNumber = 0;
+  if (Stage <= CurrentStage)
+    return false;
 
-  for (const auto &I : instructions(F)) {
-    if ((I.getType()->isVoidTy() && !isPossiblyStaticTerminator(&I)) ||
-        I.mayHaveSideEffects() || I.mayReadFromMemory() || isa<CallInst>(&I) ||
-        isa<AllocaInst>(&I)) {
-      DEBUG(dumpDynInst(&I) << ":\n" << printInstWithBlock(&I));
-      InstructionBindingTimes[&I] = Dynamic;
-      MarkedInstructions.insert(&I);
+  CurrentStage = Stage;
+  return true;
+}
+
+// Add transitive non-phi users of a value to the worklist with a given
+// incoming stage value.
+void BindingTimeAnalysis::addTransitiveNonPhiUsers(const Value *V,
+                                                   unsigned IncomingStage) {
+  SmallSetVector<const Value *, 4> TransitiveUsers(V->user_begin(),
+                                                   V->user_end());
+
+  for (unsigned TUNum = 0; TUNum < TransitiveUsers.size(); ++TUNum) {
+    const Value *TU = TransitiveUsers[TUNum];
+
+    // Close the set of transitive users by including users of phi users.
+    if (auto *Phi = dyn_cast<PHINode>(TU)) {
+      for (const Value *V : Phi->users()) {
+        TransitiveUsers.insert(V);
+      }
     } else {
-      InstructionBindingTimes[&I] = Static;
+      DEBUG(dumpStageChange(TU, IncomingStage, TU,
+                            Printable([&](raw_ostream &OS) {
+                              OS << "user of " << printName(V);
+                            })));
+      Worklist.emplace(TU, IncomingStage);
     }
   }
+}
 
-  for (auto &BB : F) {
-    BasicBlockBindingTimes[&BB] = Static;
+void BindingTimeAnalysis::fixArgument(const Argument *A, unsigned Stage) {
+  if (updateStage(A, Stage)) {
+    addTransitiveNonPhiUsers(A, Stage);
   }
 }
 
-// Compute fixed-point basic block and instruction binding-time division by
-// processing MarkedInstructions queue.
-void BindingTimeAnalysis::computeBindingTimeDivision(const Function &F) {
-  // Compute the fixed point of binding-time rules.
-  while (NextMarkedInstructionNumber < MarkedInstructions.size()) {
-    const Instruction *MarkedInst =
-        MarkedInstructions[NextMarkedInstructionNumber++];
+void BindingTimeAnalysis::fixBasicBlock(const BasicBlock *BB, unsigned Stage) {
+  if (!updateStage(BB, Stage))
+    return;
 
-    // Mark instruction users.
-    for (auto &Use : MarkedInst->uses()) {
-      if (auto *UserInst = dyn_cast<Instruction>(Use.getUser())) {
-        MarkedInstructions.insert(UserInst);
+  for (auto *PredBB : predecessors(BB)) {
+    const TerminatorInst *PredTerm = PredBB->getTerminator();
 
-        if (isa<PHINode>(UserInst)) {
-          // Don't change binding times of phis.
+    DEBUG(dumpStageChange(PredTerm, Stage, PredTerm,
+                          Printable([&](raw_ostream &OS) {
+                            OS << "branching to " << printName(BB);
+                          })));
+    Worklist.emplace(PredTerm, Stage);
+  }
+
+  for (const PHINode &Phi : BB->phis()) {
+    DEBUG(dumpStageChange(&Phi, Stage, &Phi, Printable([&](raw_ostream &OS) {
+      OS << "phi in block " << printName(BB);
+    })));
+    Worklist.emplace(&Phi, Stage);
+  }
+}
+
+void BindingTimeAnalysis::fixInstruction(const Instruction *I,
+                                         unsigned MaxOperandStage) {
+  if (!updateStage(I, MaxOperandStage))
+    return;
+
+  addTransitiveNonPhiUsers(I, MaxOperandStage);
+
+  if (auto *Term = dyn_cast<TerminatorInst>(I)) {
+    for (const BasicBlock *BB : Term->successors()) {
+      DEBUG(dumpStageChange(
+          BB, MaxOperandStage, Term, Printable([&](raw_ostream &OS) {
+            OS << "destination of terminator " << printName(Term);
+          })));
+      Worklist.emplace(BB, MaxOperandStage);
+    }
+  }
+}
+
+void BindingTimeAnalysis::initializeWorklist() {
+  assert(Worklist.empty() && "Unfinished analysis");
+
+  // Add function arguments to the worklist.
+  for (const Argument &A : F->args()) {
+    DEBUG(dumpStage(&A, A.getStage(), "stage attribute"));
+    Worklist.emplace(&A, A.getStage());
+  }
+
+  // Add basic blocks and instructions to the worklist.
+  for (const BasicBlock &BB : *F) {
+    DEBUG(dumpStage(&BB, 0, "default"));
+    Worklist.emplace(&BB, 0);
+
+    for (const Instruction &I : BB) {
+      if (isLastStage(&I)) {
+        DEBUG(dumpStage(&I, LastStage, "last stage"));
+        Worklist.emplace(&I, LastStage);
+      } else {
+        DEBUG(dumpStage(&I, 0, "default"));
+        Worklist.emplace(&I, 0);
+      }
+    }
+  }
+}
+
+// At each stage, every basic block has to have at most one terminator.
+void BindingTimeAnalysis::fixTerminators() {
+  for (auto &SourceBB : *F) {
+    for (unsigned Stage = getStage(&SourceBB); Stage <= LastStage; ++Stage) {
+      const TerminatorInst *Term = nullptr;
+
+      for (auto BBIter = df_begin(&SourceBB); BBIter != df_end(&SourceBB);) {
+        const TerminatorInst *T = (*BBIter)->getTerminator();
+
+        if (Stage < getStage(T)) {
+          ++BBIter;
           continue;
         }
 
-        DEBUG(dumpDynInst(UserInst)
-              << " (user of " << printName(MarkedInst) << "):\n"
-              << printInstWithBlock(UserInst));
-        InstructionBindingTimes[UserInst] = Dynamic;
-      }
-    }
+        BBIter.skipChildren();
 
-    // Make successor blocks dynamic.
-    if (auto *DynTerm = dyn_cast<TerminatorInst>(MarkedInst)) {
-      for (auto *SuccBB : DynTerm->successors()) {
-        DEBUG(dumpDynBB(SuccBB)
-              << " (destination of terminator " << printName(DynTerm) << "):\n"
-              << printInstWithBlock(DynTerm));
-        BasicBlockBindingTimes[SuccBB] = Dynamic;
-
-        // Make phis dynamic.
-        for (auto &Phi : SuccBB->phis()) {
-          DEBUG(dumpDynInst(&Phi)
-                << " (in dynamic basic block " << printName(SuccBB) << "):\n"
-                << printInstWithBlock(&Phi));
-          InstructionBindingTimes[&Phi] = Dynamic;
-          MarkedInstructions.insert(&Phi);
+        if (!Term) {
+          Term = T;
+          continue;
         }
 
-        // Make terminators in predecessor blocks dynamic.
-        for (auto *PredBB : predecessors(SuccBB)) {
-          const TerminatorInst *PredTerm = PredBB->getTerminator();
+        assert(T != Term);
 
-          DEBUG(dumpDynInst(PredTerm) << " (branches to dynamic basic block "
-                                      << printName(SuccBB) << "):\n"
-                                      << printInstWithBlock(PredTerm));
-          InstructionBindingTimes[PredTerm] = Dynamic;
-          MarkedInstructions.insert(PredTerm);
+        // Favor lower-stage terminators.
+        if (getStage(T) < getStage(Term)) {
+          std::swap(Term, T);
         }
+
+        errs() << "Multiple terminators for " << printName(&SourceBB)
+               << " at stage " << Stage << ":\n"
+               << printInstWithBlock(Term, "  (         )")
+               << printInstWithBlock(T, "  (->dynamic)");
+
+        Worklist.emplace(T, Stage + 1);
       }
     }
   }
 }
 
-void BindingTimeAnalysis::computeStaticTerminators(const Function &F) {
-  std::queue<const BasicBlock *> Worklist;
+// Compute a fixed point of binding-time rules.
+void BindingTimeAnalysis::fix() {
+  SaveAndRestore<bool> SavedDTS0(DefaultToStage0, true);
 
-  // Initialize static terminators.
-  for (const auto &BB : F) {
-    const auto *Term = BB.getTerminator();
+  do {
+    while (!Worklist.empty()) {
+      WorklistItem WI(Worklist.top());
+      Worklist.pop();
 
-    if (getBindingTime(Term) == Static) {
-      DEBUG(dbgs() << "Adding static terminator for " << printName(&BB) << ":\n"
-                   << printInstWithBlock(Term));
+      unsigned IS = WI.getIncomingStage();
 
-      StaticTerminators[&BB] = Term;
-      Worklist.push(&BB);
-    } else {
-      StaticTerminators.erase(&BB);
-    }
-  }
-
-  while (!Worklist.empty()) {
-    const auto *BB = Worklist.front();
-
-    Worklist.pop();
-
-    if (getBindingTime(BB) == Static)
-      continue;
-
-    const auto *Term = StaticTerminators.lookup(BB);
-
-    // Check if the terminator has got marked.
-    if (getBindingTime(Term) != Static)
-      continue;
-
-    for (const auto *PredBB : predecessors(BB)) {
-      auto EmplaceResult = StaticTerminators.try_emplace(PredBB, Term);
-
-      // Check if the map already contains a terminator.
-      if (!EmplaceResult.second) {
-        const auto *&PrevTerm = EmplaceResult.first->second;
-
-        // Check if previous static terminator has got marked in the interim and
-        // is no longer static, in which case replace it.
-        if (getBindingTime(PrevTerm) != Static) {
-          DEBUG(dbgs() << "Removing static terminator from "
-                       << printName(PredBB) << ":\n"
-                       << printInstWithBlock(PrevTerm));
-
-          PrevTerm = Term;
-        }
-
-        // If previous terminator is still static, then report a conflict and
-        // make the current terminator dynamic.
-        else {
-          errs() << "Multiple static terminators for " << printName(PredBB)
-                 << ":\n"
-                 << printInstWithBlock(PrevTerm, "  (         )")
-                 << printInstWithBlock(Term, "  (->dynamic)");
-
-          InstructionBindingTimes[Term] = Dynamic;
-          MarkedInstructions.insert(Term);
-          break;
-        }
+      if (auto *A = WI.get<Argument>()) {
+        fixArgument(A, IS);
+      } else if (auto *BB = WI.get<BasicBlock>()) {
+        fixBasicBlock(BB, IS);
+      } else if (auto *I = WI.get<Instruction>()) {
+        fixInstruction(I, IS);
+      } else {
+        llvm_unreachable("Unsupported value kind");
       }
-
-      DEBUG(dbgs() << "Adding static terminator for " << printName(PredBB)
-                   << ":\n"
-                   << printInstWithBlock(Term));
-
-      Worklist.push(PredBB);
     }
-  }
+
+    fixTerminators();
+  } while (!Worklist.empty());
 }
 
 bool BindingTimeAnalysis::runOnFunction(Function &F) {
   DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
+  this->F = &F;
+
+  // Compute the last stage for this function from the stage numbers assigned
+  // to the arguments.
+  //
+  // FIXME: It is reasonable to expect the last stage to be N as well as N+1
+  // if N is the maximum stage of the arguments. It is reasonable to expect
+  // function with no arguments and no dynamic effects to be in stage 0 as
+  // well.
+  LastStage = std::accumulate(F.arg_begin(), F.arg_end(), 1,
+                              [](unsigned LS, const Argument &A) {
+                                return std::max(LS, A.getStage() + 1);
+                              });
+
   // Initialize slot tracker for printing.
   MST.emplace(F.getParent());
+  MST->incorporateFunction(F);
 
-  initializeBindingTimeDivision(F);
+  // Reset previous state.
+  StageMap.clear();
 
-  do {
-    computeBindingTimeDivision(F);
-    computeStaticTerminators(F);
-  } while (NextMarkedInstructionNumber < MarkedInstructions.size());
-
+  initializeWorklist();
+  fix();
   return false;
 }
 
-BindingTimeAnalysis::BindingTime
-BindingTimeAnalysis::getBindingTime(const BasicBlock *BB) const {
-  auto Iter = BasicBlockBindingTimes.find(BB);
-  assert(Iter != BasicBlockBindingTimes.end() &&
-         "Basic block has not been analyzed");
+unsigned BindingTimeAnalysis::getStage(const Value *V) const {
+  if (isa<Constant>(V))
+    return 0;
+
+  auto Iter = StageMap.find(V);
+
+  if (Iter == StageMap.end()) {
+    assert(DefaultToStage0 && "Value has not been analyzed");
+    return 0;
+  }
 
   return Iter->second;
 }
 
-BindingTimeAnalysis::BindingTime
-BindingTimeAnalysis::getBindingTime(const Instruction *I) const {
-  auto Iter = InstructionBindingTimes.find(I);
-  assert(Iter != InstructionBindingTimes.end() &&
-         "Instruction has not been analyzed");
-
-  return Iter->second;
-}
-
-BindingTimeAnalysis::BindingTime
-BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
-  auto IsDynamic =
-      std::any_of(Phi->op_begin(), Phi->op_end(), [this](const Value *V) {
-        if (auto *I = dyn_cast<Instruction>(V)) {
-          return getBindingTime(I) == Dynamic;
-        } else {
-          return false;
-        }
-      });
-
-  return IsDynamic ? Dynamic : Static;
+unsigned BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
+  return std::accumulate(Phi->op_begin(), Phi->op_end(), 0,
+                         [this](unsigned Stage, const Value *V) {
+                           return std::max(Stage, getStage(V));
+                         });
 }
 
 // Print name of a local value.
@@ -303,32 +333,57 @@ Printable BindingTimeAnalysis::printInstWithBlock(const Instruction *I,
   });
 }
 
-// Print the set of static basic blocks terminated by a given static terminator.
-Printable BindingTimeAnalysis::printSBB(const TerminatorInst *Term) {
-  assert(getBindingTime(Term) == BindingTimeAnalysis::Static);
-
-  return Printable([=](raw_ostream &OS) {
-    OS << "sbb =";
-
-    const char *Delim = " ";
-
-    for (const auto &BB : *Term->getParent()->getParent()) {
-      if (getBindingTime(&BB) == BindingTimeAnalysis::Static &&
-          getStaticTerminator(&BB) == Term) {
-        OS << Delim << printName(&BB);
-        Delim = ", ";
-      }
-    }
-  });
-}
-
 #ifndef NDEBUG
-raw_ostream &BindingTimeAnalysis::dumpDynBB(const BasicBlock *BB) {
-  return dbgs() << "Basic block " << printName(BB) << " is dynamic";
+// Print name of a value preceded by a kind of value.
+Printable BindingTimeAnalysis::printValueWithKind(const Value *V) {
+  Printable Name = printName(V);
+
+  if (isa<Instruction>(V)) {
+    return Printable([=](raw_ostream &OS) { OS << "Instruction " << Name; });
+  }
+
+  const char *Kind = nullptr;
+
+  switch (V->getValueID()) {
+#define HANDLE_VALUE(Name)                                                     \
+  case Value::Name##Val:                                                       \
+    Kind = #Name;                                                              \
+    break;
+#include "llvm/IR/Value.def"
+  default:
+    break;
+  }
+
+  return Kind ? Printable([=](raw_ostream &OS) { OS << Kind << ' ' << Name; })
+              : Name;
 }
 
-raw_ostream &BindingTimeAnalysis::dumpDynInst(const Instruction *I) {
-  return dbgs() << "Instruction " << printName(I) << " is dynamic";
+template <typename Reason>
+void BindingTimeAnalysis::dumpStageImpl(const Value *V, bool StageChange,
+                                        unsigned Stage, const Value *DumpV,
+                                        Reason R) {
+  dbgs() << printValueWithKind(V) << " stage ";
+
+  if (StageChange) {
+    dbgs() << getStage(V) << "->";
+  }
+
+  dbgs() << Stage << " (" << R << ')' << '\n';
+
+  if (auto *I = dyn_cast<Instruction>(DumpV)) {
+    dbgs() << printInstWithBlock(I);
+  }
+}
+
+template <typename Reason>
+void BindingTimeAnalysis::dumpStage(const Value *V, unsigned Stage, Reason R) {
+  return dumpStageImpl(V, false, Stage, V, R);
+}
+
+template <typename Reason>
+void BindingTimeAnalysis::dumpStageChange(const Value *V, unsigned NewStage,
+                                          const Value *DumpV, Reason R) {
+  return dumpStageImpl(V, true, NewStage, DumpV, R);
 }
 #endif
 
@@ -347,86 +402,69 @@ public:
 
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
                                 formatted_raw_ostream &OS) override {
-    if (BTA.getBindingTime(BB) == BindingTimeAnalysis::Static &&
-        // Don't emit binding time for the entry block even though it's
-        // static, since BindingTimeAnalysisColorAssemblyAnnotationWriter
-        // is unable to do it.
-        BB != &BB->getParent()->getEntryBlock() &&
-        // If a block has no name and is unused, AssemblyWriter won't print
-        // its label.
-        (BB->hasName() || !BB->use_empty())) {
-      OS << "; static\n";
-    }
+    OS << printStage(BB) << '\n';
   }
 
   void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
-    if (auto *I = dyn_cast<Instruction>(&V)) {
-      if (BTA.getBindingTime(I) != BindingTimeAnalysis::Static)
-        return;
-
-      // Align following SBB comment to the CommentColumn.
-      OS.PadToColumn(CommentColumn - "; static"s.size()) << "; static";
-
-      // Print SBB set of this terminator.
-      if (auto *Term = dyn_cast<TerminatorInst>(I)) {
-        OS << ", " << BTA.printSBB(Term);
-      }
-    }
+    OS.PadToColumn(CommentColumn) << printStage(&V);
   }
 
-private:
+protected:
   BindingTimeAnalysis &BTA;
+
+private:
+  Printable printStage(const Value *V) const {
+    return Printable(
+        [=](raw_ostream &OS) { OS << "; stage(" << BTA.getStage(V) << ')'; });
+  }
 };
 
 // Color AssemblyAnnotationWriter for BindingTimeAnalysis.
 //
-// Displays the results by color-coding static parts of the IR.
+// Displays the results by color-coding static parts of the IR, in addition to
+// plain annotations.
 class BindingTimeAnalysisColorAssemblyAnnotationWriter
-    : public AssemblyAnnotationWriter {
+    : public BindingTimeAnalysisPlainAssemblyAnnotationWriter {
+  using Base = BindingTimeAnalysisPlainAssemblyAnnotationWriter;
+
 public:
   explicit BindingTimeAnalysisColorAssemblyAnnotationWriter(
       BindingTimeAnalysis &BTA)
-      : BTA(BTA) {}
+      : Base(BTA) {}
 
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
                                 formatted_raw_ostream &OS) override {
-    // Reset color after a name of static basic block.
+    if (BTA.getStage(BB) < BTA.getLastStage()) {
+      setColor(OS);
+    }
+
+    Base::emitBasicBlockStartAnnot(BB, OS);
     resetColor(OS);
   }
 
   void emitInstructionAnnot(const Instruction *I,
                             formatted_raw_ostream &OS) override {
     // Set color for the static instruction.
-    if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static) {
+    if (BTA.getStage(I) < BTA.getLastStage()) {
       setColor(OS);
     }
   }
 
   void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
-    auto *I = dyn_cast<Instruction>(&V);
-
-    if (!I)
-      return;
-
-    // Print SBB set of static terminator.
-    if (auto *Term = dyn_cast<TerminatorInst>(I)) {
-      if (BTA.getBindingTime(Term) == BindingTimeAnalysis::Static) {
-        OS.PadToColumn(CommentColumn) << "; " << BTA.printSBB(Term);
-      }
-    }
+    Base::printInfoComment(V, OS);
 
     // Reset color after a static instruction.
-    if (BTA.getBindingTime(I) == BindingTimeAnalysis::Static) {
+    if (BTA.getStage(&V) < BTA.getLastStage()) {
       resetColor(OS);
     }
 
     // Set the color for the name of the next static basic block.
-    if (auto *Term = dyn_cast<TerminatorInst>(I)) {
+    if (auto *Term = dyn_cast<TerminatorInst>(&V)) {
       Function::const_iterator BB(Term->getParent());
       Function::const_iterator NextBB(std::next(BB));
 
       if (NextBB != BB->getParent()->end() &&
-          BTA.getBindingTime(&*NextBB) == BindingTimeAnalysis::Static) {
+          BTA.getStage(&*NextBB) < BTA.getLastStage()) {
         setColor(OS);
       }
     }
@@ -440,8 +478,6 @@ private:
   static void resetColor(formatted_raw_ostream &OS) {
     OS.resetColor();
   }
-
-  BindingTimeAnalysis &BTA;
 };
 
 } // namespace llvm
