@@ -1278,8 +1278,8 @@ unsigned AttributeList::getStackAlignment(unsigned Index) const {
   return getAttributes(Index).getStackAlignment();
 }
 
-unsigned AttributeList::getStage(unsigned Index) const {
-  return getAttributes(Index).getStage();
+unsigned AttributeList::getParamStage(unsigned ArgNo) const {
+  return getAttributes(ArgNo + FirstArgIndex).getStage();
 }
 
 uint64_t AttributeList::getDereferenceableBytes(unsigned Index) const {

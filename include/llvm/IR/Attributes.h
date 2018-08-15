@@ -597,8 +597,8 @@ public:
   /// \brief Get the stack alignment.
   unsigned getStackAlignment(unsigned Index) const;
 
-  /// \brief Get the binding-time stage.
-  unsigned getStage(unsigned Index) const;
+  /// \brief Get the binding-time stage of a function parameter.
+  unsigned getParamStage(unsigned ArgNo) const;
 
   /// \brief Get the number of dereferenceable bytes (or zero if unknown).
   uint64_t getDereferenceableBytes(unsigned Index) const;
