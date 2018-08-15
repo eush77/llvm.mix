@@ -14,6 +14,7 @@
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Argument.h"
@@ -90,6 +91,7 @@ void BindingTimeAnalysis::addTransitiveNonPhiUsers(const Value *V,
                                                    unsigned IncomingStage) {
   SmallSetVector<const Value *, 4> TransitiveUsers(V->user_begin(),
                                                    V->user_end());
+  unsigned NumDirectUsers = TransitiveUsers.size();
 
   for (unsigned TUNum = 0; TUNum < TransitiveUsers.size(); ++TUNum) {
     const Value *TU = TransitiveUsers[TUNum];
@@ -100,11 +102,10 @@ void BindingTimeAnalysis::addTransitiveNonPhiUsers(const Value *V,
         TransitiveUsers.insert(V);
       }
     } else {
-      DEBUG(dumpStageChange(TU, IncomingStage, TU,
-                            Printable([&](raw_ostream &OS) {
-                              OS << "user of " << printName(V);
-                            })));
-      Worklist.emplace(TU, IncomingStage);
+      enqueue(TU, IncomingStage,
+              TUNum < NumDirectUsers ? WorklistItem::Operand
+                                     : WorklistItem::TransitiveOperand,
+              V);
     }
   }
 }
@@ -120,20 +121,11 @@ void BindingTimeAnalysis::fixBasicBlock(const BasicBlock *BB, unsigned Stage) {
     return;
 
   for (auto *PredBB : predecessors(BB)) {
-    const TerminatorInst *PredTerm = PredBB->getTerminator();
-
-    DEBUG(dumpStageChange(PredTerm, Stage, PredTerm,
-                          Printable([&](raw_ostream &OS) {
-                            OS << "branching to " << printName(BB);
-                          })));
-    Worklist.emplace(PredTerm, Stage);
+    enqueue(PredBB->getTerminator(), Stage, WorklistItem::Successor, BB);
   }
 
   for (const PHINode &Phi : BB->phis()) {
-    DEBUG(dumpStageChange(&Phi, Stage, &Phi, Printable([&](raw_ostream &OS) {
-      OS << "phi in block " << printName(BB);
-    })));
-    Worklist.emplace(&Phi, Stage);
+    enqueue(&Phi, Stage, WorklistItem::Parent, BB);
   }
 }
 
@@ -146,11 +138,7 @@ void BindingTimeAnalysis::fixInstruction(const Instruction *I,
 
   if (auto *Term = dyn_cast<TerminatorInst>(I)) {
     for (const BasicBlock *BB : Term->successors()) {
-      DEBUG(dumpStageChange(
-          BB, MaxOperandStage, Term, Printable([&](raw_ostream &OS) {
-            OS << "destination of terminator " << printName(Term);
-          })));
-      Worklist.emplace(BB, MaxOperandStage);
+      enqueue(BB, MaxOperandStage, WorklistItem::PredTerminator, Term);
     }
   }
 }
@@ -160,22 +148,18 @@ void BindingTimeAnalysis::initializeWorklist() {
 
   // Add function arguments to the worklist.
   for (const Argument &A : F->args()) {
-    DEBUG(dumpStage(&A, A.getStage(), "stage attribute"));
-    Worklist.emplace(&A, A.getStage());
+    enqueue(&A, A.getStage(), WorklistItem::Attribute);
   }
 
   // Add basic blocks and instructions to the worklist.
   for (const BasicBlock &BB : *F) {
-    DEBUG(dumpStage(&BB, 0, "default"));
-    Worklist.emplace(&BB, 0);
+    enqueue(&BB, 0, WorklistItem::Default);
 
     for (const Instruction &I : BB) {
       if (isLastStage(&I)) {
-        DEBUG(dumpStage(&I, LastStage, "last stage"));
-        Worklist.emplace(&I, LastStage);
+        enqueue(&I, LastStage, WorklistItem::LastStage);
       } else {
-        DEBUG(dumpStage(&I, 0, "default"));
-        Worklist.emplace(&I, 0);
+        enqueue(&I, 0, WorklistItem::Default);
       }
     }
   }
@@ -209,12 +193,17 @@ void BindingTimeAnalysis::fixTerminators() {
           std::swap(Term, T);
         }
 
-        errs() << "Multiple terminators for " << printName(&SourceBB)
-               << " at stage " << Stage << ":\n"
-               << printInstWithBlock(Term, "  (         )")
-               << printInstWithBlock(T, "  (->dynamic)");
+        bool PrintErr = true;
+        DEBUG(PrintErr = false);
 
-        Worklist.emplace(T, Stage + 1);
+        if (PrintErr) {
+          errs() << "Multiple stage-" << Stage << " terminators of "
+                 << printName(&SourceBB) << ":\n"
+                 << printInstWithBlock(Term, "                ")
+                 << printInstWithBlock(T, "  (=>next stage)");
+        }
+
+        enqueue(T, Stage + 1, WorklistItem::StageTerminator, Term, &SourceBB);
       }
     }
   }
@@ -222,20 +211,17 @@ void BindingTimeAnalysis::fixTerminators() {
 
 // Compute a fixed point of binding-time rules.
 void BindingTimeAnalysis::fix() {
-  SaveAndRestore<bool> SavedDTS0(DefaultToStage0, true);
-
   do {
-    while (!Worklist.empty()) {
-      WorklistItem WI(Worklist.top());
-      Worklist.pop();
+    while (auto WI = popItem()) {
+      unsigned IS = WI->getIncomingStage();
 
-      unsigned IS = WI.getIncomingStage();
+      DEBUG(WI->print(dbgs(), *this));
 
-      if (auto *A = WI.get<Argument>()) {
+      if (auto *A = WI->get<Argument>()) {
         fixArgument(A, IS);
-      } else if (auto *BB = WI.get<BasicBlock>()) {
+      } else if (auto *BB = WI->get<BasicBlock>()) {
         fixBasicBlock(BB, IS);
-      } else if (auto *I = WI.get<Instruction>()) {
+      } else if (auto *I = WI->get<Instruction>()) {
         fixInstruction(I, IS);
       } else {
         llvm_unreachable("Unsupported value kind");
@@ -268,25 +254,29 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   MST->incorporateFunction(F);
 
   // Reset previous state.
+  WorklistID = 0;
   StageMap.clear();
+
+  // Default to stage(0) in `getStage'.
+  SaveAndRestore<bool> SavedDTS0(DefaultToStage0, true);
 
   initializeWorklist();
   fix();
   return false;
 }
 
+// True if the value is analyzed and has a binding time.
+bool BindingTimeAnalysis::isAnalyzed(const Value *V) const {
+  return isa<Constant>(V) || StageMap.count(V);
+}
+
 unsigned BindingTimeAnalysis::getStage(const Value *V) const {
+  assert((DefaultToStage0 || isAnalyzed(V)) && "Value has not been analyzed");
+
   if (isa<Constant>(V))
     return 0;
 
-  auto Iter = StageMap.find(V);
-
-  if (Iter == StageMap.end()) {
-    assert(DefaultToStage0 && "Value has not been analyzed");
-    return 0;
-  }
-
-  return Iter->second;
+  return StageMap.lookup(V);
 }
 
 unsigned BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
@@ -294,6 +284,88 @@ unsigned BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
                          [this](unsigned Stage, const Value *V) {
                            return std::max(Stage, getStage(V));
                          });
+}
+
+// Add new item to the worklist, but not if the value has already surpassed
+// the incoming stage.
+template <typename... ArgsT>
+void BindingTimeAnalysis::enqueue(const Value *V, unsigned IncomingStage,
+                                  WorklistItem::Reason R, ArgsT... Args) {
+  if (!isAnalyzed(V) || getStage(V) < IncomingStage) {
+    Worklist.emplace(WorklistID++, V, IncomingStage, R, Args...);
+  }
+}
+
+// Pop off next unsuperseded item from the worklist.
+Optional<BindingTimeAnalysis::WorklistItem> BindingTimeAnalysis::popItem() {
+  // Drop old items.
+  while (!Worklist.empty() && isAnalyzed(Worklist.top().get<Value>()) &&
+         Worklist.top().getIncomingStage() <=
+             getStage(Worklist.top().get<Value>())) {
+    Worklist.pop();
+  }
+
+  if (Worklist.empty())
+    return None;
+
+  auto WI = Worklist.top();
+  Worklist.pop();
+  return WI;
+}
+
+void BindingTimeAnalysis::WorklistItem::print(raw_ostream &OS,
+                                              BindingTimeAnalysis &BTA) const {
+  OS << BTA.printValueWithKind(V) << " to stage(" << InStage << ')'
+     << (Sender ? " from " : " by ");
+
+  switch (R) {
+  case Attribute:
+    OS << "attribute";
+    break;
+
+  case Default:
+    OS << "default";
+    break;
+
+  case LastStage:
+    OS << "last stage";
+    break;
+
+  case Operand:
+    OS << "operand";
+    break;
+
+  case Parent:
+    OS << "parent";
+    break;
+
+  case PredTerminator:
+    OS << "predecessor terminator";
+    break;
+
+  case StageTerminator:
+    OS << "stage-" << (InStage - 1) << " terminator of "
+       << BTA.printName(cast<BasicBlock>(Arg));
+    break;
+
+  case Successor:
+    OS << "successor";
+    break;
+
+  case TransitiveOperand:
+    OS << "transitive operand";
+    break;
+  }
+
+  if (Sender) {
+    OS << ' ' << BTA.printName(Sender);
+  }
+
+  OS << '\n';
+
+  if (auto *I = dyn_cast<Instruction>(V)) {
+    OS << BTA.printInstWithBlock(I);
+  }
 }
 
 // Print name of a local value.
@@ -319,21 +391,6 @@ Printable BindingTimeAnalysis::printName(const Value *V) {
   });
 }
 
-constexpr unsigned CommentColumn = 50;
-
-// Print instruction and comment it with the name of the parent basic block.
-Printable BindingTimeAnalysis::printInstWithBlock(const Instruction *I,
-                                                  StringRef Prefix) {
-  return Printable([=](raw_ostream &OS) {
-    formatted_raw_ostream FOS(OS);
-
-    FOS << Prefix;
-    I->print(FOS, *MST);
-    FOS.PadToColumn(CommentColumn) << "; " << printName(I->getParent()) << '\n';
-  });
-}
-
-#ifndef NDEBUG
 // Print name of a value preceded by a kind of value.
 Printable BindingTimeAnalysis::printValueWithKind(const Value *V) {
   Printable Name = printName(V);
@@ -358,34 +415,19 @@ Printable BindingTimeAnalysis::printValueWithKind(const Value *V) {
               : Name;
 }
 
-template <typename Reason>
-void BindingTimeAnalysis::dumpStageImpl(const Value *V, bool StageChange,
-                                        unsigned Stage, const Value *DumpV,
-                                        Reason R) {
-  dbgs() << printValueWithKind(V) << " stage ";
+constexpr unsigned CommentColumn = 50;
 
-  if (StageChange) {
-    dbgs() << getStage(V) << "->";
-  }
+// Print instruction and comment it with the name of the parent basic block.
+Printable BindingTimeAnalysis::printInstWithBlock(const Instruction *I,
+                                                  StringRef Prefix) {
+  return Printable([=](raw_ostream &OS) {
+    formatted_raw_ostream FOS(OS);
 
-  dbgs() << Stage << " (" << R << ')' << '\n';
-
-  if (auto *I = dyn_cast<Instruction>(DumpV)) {
-    dbgs() << printInstWithBlock(I);
-  }
+    FOS << Prefix;
+    I->print(FOS, *MST);
+    FOS.PadToColumn(CommentColumn) << "; " << printName(I->getParent()) << '\n';
+  });
 }
-
-template <typename Reason>
-void BindingTimeAnalysis::dumpStage(const Value *V, unsigned Stage, Reason R) {
-  return dumpStageImpl(V, false, Stage, V, R);
-}
-
-template <typename Reason>
-void BindingTimeAnalysis::dumpStageChange(const Value *V, unsigned NewStage,
-                                          const Value *DumpV, Reason R) {
-  return dumpStageImpl(V, true, NewStage, DumpV, R);
-}
-#endif
 
 namespace llvm {
 

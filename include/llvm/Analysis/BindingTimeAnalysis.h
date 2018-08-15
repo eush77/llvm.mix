@@ -25,7 +25,6 @@
 #include "llvm/Support/Printable.h"
 
 #include <queue>
-#include <utility>
 
 namespace llvm {
 
@@ -74,43 +73,63 @@ private:
   void fixTerminators();
   void fix();
 
+  bool isAnalyzed(const Value *V) const;
+
   Printable printName(const Value *V);
+  Printable printValueWithKind(const Value *V);
   Printable printInstWithBlock(const Instruction *I, StringRef Prefix = "");
 
-#ifndef NDEBUG
-  Printable printValueWithKind(const Value *V);
-
-  template <typename Reason>
-  void dumpStageImpl(const Value *V, bool StageChange, unsigned Stage,
-                     const Value *DumpV, Reason R);
-
-  template <typename Reason>
-  void dumpStage(const Value *V, unsigned Stage, Reason R);
-
-  template <typename Reason>
-  void dumpStageChange(const Value *V, unsigned NewStage, const Value *DumpV,
-                       Reason R);
-#endif
-
-  class WorklistItem : std::pair<unsigned, const Value *> {
-    using Base = std::pair<unsigned, const Value *>;
-
+  class WorklistItem {
   public:
-    WorklistItem(const Value *Value, unsigned IncomingStage)
-        : Base(IncomingStage, Value) {}
+    enum Reason {
+      Attribute,
+      Default,
+      LastStage,
+      Operand,
+      Parent,
+      PredTerminator,
+      StageTerminator,
+      Successor,
+      TransitiveOperand,
+    };
 
-    template <typename T> bool is() const { return isa<T>(second); }
-    template <typename T> const T *get() const { return dyn_cast<T>(second); }
-    unsigned getIncomingStage() const { return first; }
-
-    // Compare by incoming stage.
-    bool operator<(const WorklistItem &Other) const {
-      return static_cast<const Base &>(*this) < Other;
+    WorklistItem(unsigned ID, const Value *V, unsigned IncomingStage, Reason R,
+                 const Value *Sender = nullptr, const Value *Arg = nullptr)
+        : ID(ID), V(V), InStage(IncomingStage), R(R), Sender(Sender), Arg(Arg) {
     }
+
+    template <typename T> const T *get() const { return dyn_cast<T>(V); }
+    unsigned getIncomingStage() const { return InStage; }
+
+    // Comparison operator for std::priority_queue.
+    //
+    // If incoming stages differ, prioritize the item with the later stage.
+    // If incoming stages are equal, prioritize the item that was created
+    // earlier.
+    bool operator<(const WorklistItem &Other) const {
+      return (InStage < Other.InStage) ||
+             (InStage == Other.InStage && ID > Other.InStage);
+    }
+
+    void print(raw_ostream &OS, BindingTimeAnalysis &BTA) const;
+
+  private:
+    unsigned ID;
+    const Value *V;
+    unsigned InStage;
+    Reason R;
+    const Value *Sender;
+    const Value *Arg;
   };
+
+  template <typename... ArgsT>
+  void enqueue(const Value *V, unsigned IncomingStage, WorklistItem::Reason R,
+               ArgsT... Args);
+  Optional<WorklistItem> popItem();
 
   // Work list prioritizing higher-stage values over lower-stage values.
   std::priority_queue<WorklistItem> Worklist;
+  unsigned WorklistID{};
 
   // Mapping of values to binding-time stages.
   DenseMap<const Value *, unsigned> StageMap;
