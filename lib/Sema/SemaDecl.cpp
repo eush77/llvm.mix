@@ -2544,7 +2544,8 @@ static void checkNewAttributesAfterDef(Sema &S, Decl *New, const Decl *Old) {
   for (unsigned I = 0, E = NewAttributes.size(); I != E;) {
     const Attr *NewAttribute = NewAttributes[I];
 
-    if (isa<AliasAttr>(NewAttribute) || isa<IFuncAttr>(NewAttribute)) {
+    if (isa<AliasAttr>(NewAttribute) || isa<IFuncAttr>(NewAttribute) ||
+        isa<MixAttr>(NewAttribute) || isa<MixIRAttr>(NewAttribute)) {
       if (FunctionDecl *FD = dyn_cast<FunctionDecl>(New)) {
         Sema::SkipBodyInfo SkipBody;
         S.CheckForFunctionRedefinition(FD, cast<FunctionDecl>(Def), &SkipBody);
@@ -12043,6 +12044,16 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D,
   if (const auto *Attr = FD->getAttr<IFuncAttr>()) {
     Diag(Attr->getLocation(), diag::err_alias_is_definition) << FD << 1;
     FD->dropAttr<IFuncAttr>();
+    FD->setInvalidDecl();
+  }
+  if (const auto *Attr = FD->getAttr<MixAttr>()) {
+    Diag(Attr->getLocation(), diag::err_alias_is_definition) << FD << 2;
+    FD->dropAttr<MixAttr>();
+    FD->setInvalidDecl();
+  }
+  if (const auto *Attr = FD->getAttr<MixIRAttr>()) {
+    Diag(Attr->getLocation(), diag::err_alias_is_definition) << FD << 2;
+    FD->dropAttr<MixIRAttr>();
     FD->setInvalidDecl();
   }
 

@@ -1173,6 +1173,20 @@ def MayAlias : InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+def Mix : Attr {
+  let Spellings = [GNU<"mix">];
+  let Args = [FunctionArgument<"MixedFunction">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def MixIR : Attr {
+  let Spellings = [GNU<"mix_ir">];
+  let Args = [FunctionArgument<"MixedFunction">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
 def MSABI : InheritableAttr {
   let Spellings = [GCC<"ms_abi">];
 //  let Subjects = [Function, ObjCMethod];

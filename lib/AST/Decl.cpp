@@ -2827,6 +2827,10 @@ bool FunctionDecl::isNoReturn() const {
   return false;
 }
 
+bool FunctionDecl::isMixSpecializerDeclaration() const {
+  return hasAttr<MixAttr>() || hasAttr<MixIRAttr>();
+}
+
 void
 FunctionDecl::setPreviousDeclaration(FunctionDecl *PrevDecl) {
   redeclarable_base::setPreviousDecl(PrevDecl);

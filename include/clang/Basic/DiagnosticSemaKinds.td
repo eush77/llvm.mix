@@ -3299,6 +3299,8 @@ def err_attribute_cleanup_func_must_take_one_arg : Error<
 def err_attribute_cleanup_func_arg_incompatible_type : Error<
   "'cleanup' function %0 parameter has "
   "%diff{type $ which is incompatible with type $|incompatible type}1,2">;
+def err_attribute_mix_arg_not_function : Error<
+  "'%select{mix|mix_ir}0' argument %select{|%2 }1is not a function">;
 def err_attribute_regparm_wrong_platform : Error<
   "'regparm' is not valid on this platform">;
 def err_attribute_regparm_invalid_number : Error<
@@ -4655,7 +4657,7 @@ def err_redefinition : Error<"redefinition of %0">;
 def err_alias_after_tentative :
   Error<"alias definition of %0 after tentative definition">;
 def err_alias_is_definition :
-  Error<"definition %0 cannot also be an %select{alias|ifunc}1">;
+  Error<"definition %0 cannot also be %select{an alias|an ifunc|a specializer}1">;
 def err_definition_of_implicitly_declared_member : Error<
   "definition of implicitly declared %select{default constructor|copy "
   "constructor|move constructor|copy assignment operator|move assignment "

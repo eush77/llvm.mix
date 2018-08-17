@@ -458,7 +458,8 @@ ExternalSourceSymbolAttr *Decl::getExternalSourceSymbolAttr() const {
 }
 
 bool Decl::hasDefiningAttr() const {
-  return hasAttr<AliasAttr>() || hasAttr<IFuncAttr>();
+  return hasAttr<AliasAttr>() || hasAttr<IFuncAttr>() || hasAttr<MixAttr>() ||
+         hasAttr<MixIRAttr>();
 }
 
 const Attr *Decl::getDefiningAttr() const {
@@ -466,6 +467,10 @@ const Attr *Decl::getDefiningAttr() const {
     return AA;
   if (IFuncAttr *IFA = getAttr<IFuncAttr>())
     return IFA;
+  if (MixAttr *MA = getAttr<MixAttr>())
+    return MA;
+  if (MixIRAttr *MIRA = getAttr<MixIRAttr>())
+    return MIRA;
   return nullptr;
 }
 

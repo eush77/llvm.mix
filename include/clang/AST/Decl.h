@@ -1981,6 +1981,10 @@ public:
     return Body || IsLateTemplateParsed;
   }
 
+  /// Returns whether this declaration is a stub for a generated Mix
+  /// specializer.
+  bool isMixSpecializerDeclaration() const;
+
   void setBody(Stmt *B);
   void setLazyBody(uint64_t Offset) { Body = Offset; }
 

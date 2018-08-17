@@ -1308,8 +1308,11 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
            !getLangOpts().CUDAIsDevice &&
            FD->hasAttr<CUDAGlobalAttr>())
     CGM.getCUDARuntime().emitDeviceStub(*this, Args);
-  else if (isa<CXXMethodDecl>(FD) &&
-           cast<CXXMethodDecl>(FD)->isLambdaStaticInvoker()) {
+  else if (FD->isMixSpecializerDeclaration()) {
+    Builder.CreateUnreachable();
+    Builder.ClearInsertionPoint();
+  } else if (isa<CXXMethodDecl>(FD) &&
+             cast<CXXMethodDecl>(FD)->isLambdaStaticInvoker()) {
     // The lambda static invoker function is special, because it forwards or
     // clones the body of the function call operator (but is actually static).
     EmitLambdaStaticInvokeBody(cast<CXXMethodDecl>(FD));

@@ -1292,6 +1292,32 @@ static void handleTestTypestateAttr(Sema &S, Decl *D,
                                 Attr.getAttributeSpellingListIndex()));
 }
 
+static void handleMixAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+  bool IsMixIR = Attr.getKind() == AttributeList::AT_MixIR;
+  Expr *E = Attr.getArgAsExpr(0);
+  SourceLocation Loc = E->getExprLoc();
+  FunctionDecl *FD;
+
+  if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+    if (!(FD = dyn_cast<FunctionDecl>(DRE->getDecl()))) {
+      S.Diag(Loc, diag::err_attribute_mix_arg_not_function)
+          << IsMixIR << 1 << DRE->getNameInfo().getName();
+      return;
+    }
+  } else {
+    S.Diag(Loc, diag::err_attribute_mix_arg_not_function) << IsMixIR << 0;
+    return;
+  }
+
+  if (IsMixIR) {
+    D->addAttr(::new (S.Context) MixIRAttr(
+        Attr.getRange(), S.Context, FD, Attr.getAttributeSpellingListIndex()));
+  } else {
+    D->addAttr(::new (S.Context) MixAttr(Attr.getRange(), S.Context, FD,
+                                         Attr.getAttributeSpellingListIndex()));
+  }
+}
+
 static void handleExtVectorTypeAttr(Sema &S, Scope *scope, Decl *D,
                                     const AttributeList &Attr) {
   // Remember this typedef decl, we will need it later for diagnostics.
@@ -6555,6 +6581,12 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_TestTypestate:
     handleTestTypestateAttr(S, D, Attr);
+    break;
+
+  // Mixed execution attributes.
+  case AttributeList::AT_Mix:
+  case AttributeList::AT_MixIR:
+    handleMixAttr(S, D, Attr);
     break;
 
   // Type safety attributes.
