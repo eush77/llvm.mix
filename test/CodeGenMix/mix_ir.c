@@ -1,10 +1,11 @@
 // RUN: %clang_cc1 -emit-llvm %s -o - | FileCheck %s
 
-int f(int a, int b) {
+float f(int a, float b) {
   return a + b;
 }
 
 __attribute__((mix_ir(f)))
-void *gen_f_ir(void*, int, int);
-// CHECK-LABEL: define i8* @gen_f_ir
-// CHECK: unreachable
+void *f_gen(void *context, int a, float b);
+// CHECK-LABEL: define i8* @f_gen(i8* %context, i32 %a, float %b)
+// CHECK: [[val:%[^ ]+]] = call {{.*}} @llvm.mix(i8* %context{{[^,]+}}, metadata !"f", i32 %a{{[^,]+}}, float %b{{[^,]+}})
+// CHECK-NEXT: ret i8* [[val]]

@@ -56,6 +56,7 @@ add_clang_library(clangCodeGen
   CGExprScalar.cpp
   CGGPUBuiltin.cpp
   CGLoopInfo.cpp
+  CGMix.cpp
   CGObjC.cpp
   CGObjCGNU.cpp
   CGObjCMac.cpp
