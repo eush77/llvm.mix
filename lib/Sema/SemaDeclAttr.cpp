@@ -1294,18 +1294,25 @@ static void handleTestTypestateAttr(Sema &S, Decl *D,
 
 static void handleMixAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   bool IsMixIR = Attr.getKind() == AttributeList::AT_MixIR;
+
+  if (checkAttrMutualExclusion<MixAttr>(S, D, Attr.getRange(),
+                                        Attr.getName()) ||
+      checkAttrMutualExclusion<MixIRAttr>(S, D, Attr.getRange(),
+                                          Attr.getName()))
+    return;
+
   Expr *E = Attr.getArgAsExpr(0);
-  SourceLocation Loc = E->getExprLoc();
   FunctionDecl *FD;
 
   if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     if (!(FD = dyn_cast<FunctionDecl>(DRE->getDecl()))) {
-      S.Diag(Loc, diag::err_attribute_mix_arg_not_function)
+      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_not_function)
           << IsMixIR << 1 << DRE->getNameInfo().getName();
       return;
     }
   } else {
-    S.Diag(Loc, diag::err_attribute_mix_arg_not_function) << IsMixIR << 0;
+    S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_not_function)
+        << IsMixIR << 0;
     return;
   }
 
