@@ -1174,14 +1174,14 @@ def MayAlias : InheritableAttr {
 }
 
 def Mix : Attr {
-  let Spellings = [GNU<"mix">];
+  let Spellings = [Clang<"mix">];
   let Args = [FunctionArgument<"MixedFunction">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [Undocumented];
 }
 
 def MixIR : Attr {
-  let Spellings = [GNU<"mix_ir">];
+  let Spellings = [Clang<"mix_ir">];
   let Args = [FunctionArgument<"MixedFunction">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [Undocumented];
