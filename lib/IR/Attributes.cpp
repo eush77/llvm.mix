@@ -1386,6 +1386,8 @@ AttrBuilder &AttrBuilder::addAttribute(Attribute Attr) {
     DerefOrNullBytes = Attr.getDereferenceableOrNullBytes();
   else if (Kind == Attribute::AllocSize)
     AllocSizeArgs = Attr.getValueAsInt();
+  else if (Kind == Attribute::Stage)
+    Stage = Attr.getStage();
   return *this;
 }
 
