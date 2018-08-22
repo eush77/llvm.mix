@@ -1325,6 +1325,29 @@ static void handleMixAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   }
 }
 
+static void handleStageAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+  if (D->hasAttr<StageAttr>()) {
+    S.Diag(D->getLocStart(), diag::err_attribute_only_once_per_parameter)
+        << Attr.getName();
+    return;
+  }
+
+  const Expr *Arg = Attr.getArgAsExpr(0);
+
+  int Stage;
+  if (!checkPositiveIntArgument(S, Attr, Arg, Stage))
+    return;
+
+  if (Stage == 0) {
+    S.Diag(Arg->getExprLoc(), diag::err_attribute_argument_is_zero)
+        << Attr.getName();
+    return;
+  }
+
+  D->addAttr(::new (S.Context) StageAttr(Attr.getRange(), S.Context, Stage,
+                                         Attr.getAttributeSpellingListIndex()));
+}
+
 static void handleExtVectorTypeAttr(Sema &S, Scope *scope, Decl *D,
                                     const AttributeList &Attr) {
   // Remember this typedef decl, we will need it later for diagnostics.
@@ -6594,6 +6617,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_Mix:
   case AttributeList::AT_MixIR:
     handleMixAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_Stage:
+    handleStageAttr(S, D, Attr);
     break;
 
   // Type safety attributes.

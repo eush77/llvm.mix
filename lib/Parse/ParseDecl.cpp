@@ -741,6 +741,27 @@ void Parser::ParseNullabilityTypeSpecifiers(ParsedAttributes &attrs) {
   }
 }
 
+void Parser::ParseStageSpecifier(ParsedAttributes &Attrs) {
+  IdentifierInfo *KWName = Tok.getIdentifierInfo();
+  SourceLocation KWLoc = ConsumeToken();
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume())
+    return;
+
+  ExprResult ArgExpr = ParseConstantExpression();
+  if (ArgExpr.isInvalid()) {
+    T.skipToEnd();
+    return;
+  }
+
+  T.consumeClose();
+
+  ArgsVector ArgExprs{ArgExpr.get()};
+  Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), 1,
+               AttributeList::AS_Keyword);
+}
+
 static bool VersionNumberSeparator(const char Separator) {
   return (Separator == '.' || Separator == '_');
 }
@@ -3713,6 +3734,11 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       isInvalid = DS.SetTypeQual(DeclSpec::TQ_atomic, Loc, PrevSpec, DiagID,
                                  getLangOpts());
       break;
+
+    // Binding-time stage specifier.
+    case tok::kw___stage:
+      ParseStageSpecifier(DS.getAttributes());
+      continue;
 
     // OpenCL qualifiers:
     case tok::kw___generic:

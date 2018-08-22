@@ -2264,6 +2264,15 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
     unsigned FirstIRArg, NumIRArgs;
     std::tie(FirstIRArg, NumIRArgs) = IRFunctionArgs.getIRArgs(ArgNo);
 
+    if (auto *SA = Arg->getAttr<StageAttr>()) {
+      for (unsigned IRArg = FirstIRArg; IRArg < FirstIRArg + NumIRArgs;
+           ++IRArg) {
+        cast<llvm::Argument>(FnArgs[IRArg])
+            ->addAttr(llvm::Attribute::getWithStage(getLLVMContext(),
+                                                    SA->getStage()));
+      }
+    }
+
     switch (ArgI.getKind()) {
     case ABIArgInfo::InAlloca: {
       assert(NumIRArgs == 0);

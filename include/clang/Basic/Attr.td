@@ -1187,6 +1187,13 @@ def MixIR : Attr {
   let Documentation = [Undocumented];
 }
 
+def Stage : Attr {
+  let Spellings = [Keyword<"__stage">];
+  let Args = [UnsignedArgument<"Stage">];
+  let Subjects = SubjectList<[ParmVar]>;
+  let Documentation = [Undocumented];
+}
+
 def MSABI : InheritableAttr {
   let Spellings = [GCC<"ms_abi">];
 //  let Subjects = [Function, ObjCMethod];

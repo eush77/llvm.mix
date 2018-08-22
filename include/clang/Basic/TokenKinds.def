@@ -654,6 +654,8 @@ ALIAS("__char32_t"   , char32_t   , KEYCXX)
 
 KEYWORD(__builtin_available       , KEYALL)
 
+KEYWORD(__stage                   , KEYALL)
+
 // Clang-specific keywords enabled only in testing.
 TESTING_KEYWORD(__unknown_anytype , KEYALL)
 
