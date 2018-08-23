@@ -71,8 +71,7 @@ private:
   Function *createSpecializer(Function *F);
   static FunctionType *getSpecializerType(FunctionType *FT);
   void buildSpecializer();
-  void buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
-                       Instruction *StagedModule);
+  void buildBasicBlock(BasicBlock *BB, BasicBlock *SBB, Instruction *RetVal);
   void collectDynamicBlocks(BasicBlock *BB,
                             SetVector<BasicBlock *> &DynBBs) const;
   void buildInstruction(Instruction *I) const;
@@ -170,7 +169,7 @@ FunctionType *Mix::getSpecializerType(FunctionType *FT) {
   Params.push_back(mix::getContextPtrTy(FT->getContext()));
   Params.append(FT->param_begin(), FT->param_end());
 
-  return FunctionType::get(mix::getModulePtrTy(FT->getContext()), Params,
+  return FunctionType::get(mix::getValuePtrTy(FT->getContext()), Params,
                            FT->isVarArg());
 }
 
@@ -202,12 +201,12 @@ void Mix::buildSpecializer() {
     BasicBlock *SBB;
     std::tie(BB, SBB) = StaticBasicBlocks.begin()[SBBNum];
 
-    buildBasicBlock(BB, SBB, StagedModule);
+    buildBasicBlock(BB, SBB, StagedFunction);
   }
 }
 
 void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
-                          Instruction *StagedModule) {
+                          Instruction *RetVal) {
   DEBUG(dbgs() << "  - Building static basic block %" << BB->getName() << '\n');
 
   B->SetInsertPoint(SBB);
@@ -234,7 +233,7 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
 
   if (isa<ReturnInst>(Term)) {
     SB->disposeBuilder();
-    B->CreateRet(StagedModule);
+    B->CreateRet(RetVal);
   }
 
   // Create new successor static blocks.

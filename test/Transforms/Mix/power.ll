@@ -5,7 +5,7 @@
 ; RUN: | opt -verify -disable-output
 
 ; CHECK-LABEL: define i32 @power-iter(i32* %px, i32 %n)
-; CHECK-LABEL: define private %struct.LLVMOpaqueModule* @power-iter.mix(%struct.LLVMOpaqueContext* %context, i32* %px, i32 %n)
+; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @power-iter.mix(%struct.LLVMOpaqueContext* %context, i32* %px, i32 %n)
 ; CHECK-STAGE-LABEL: define i32 @power-iter()
 define i32 @power-iter(i32* %px, i32 %n) {
 ; CHECK: entry:
@@ -49,8 +49,8 @@ exit:
 define void @main() {
   %px = alloca i32
   %c = call i8* @LLVMContextCreate()
-  %m = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32*, i32)* @power-iter to i8*), i8* %c, i32* %px, i32 5)
-  call void @LLVMDumpModule(i8* %m)
+  %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32*, i32)* @power-iter to i8*), i8* %c, i32* %px, i32 5)
+  call void @LLVMDumpValue(i8* %f)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
@@ -58,4 +58,4 @@ define void @main() {
 declare i8* @llvm.mix.ir(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
-declare void @LLVMDumpModule(i8*)
+declare void @LLVMDumpValue(i8*)

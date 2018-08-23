@@ -58,16 +58,17 @@ exit:
   ret i32 %result
 }
 
-; CHECK: define private %struct.LLVMOpaqueModule* @f.mix(%struct.LLVMOpaqueContext* [[context:%.+]])
+; CHECK: define private %struct.LLVMOpaqueValue* @f.mix(%struct.LLVMOpaqueContext* [[context:%.+]])
 ; CHECK: [[module:%.+]] = call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext({{.*}}, %struct.LLVMOpaqueContext* [[context]])
-; CHECK: ret %struct.LLVMOpaqueModule* [[module]]
+; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction(%struct.LLVMOpaqueModule* [[module]],
+; CHECK: ret %struct.LLVMOpaqueValue* [[function]]
 
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  ; CHECK: call %struct.LLVMOpaqueModule* @f.mix({{.*}})
-  %m = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ()* @f to i8*), i8* %c)
-  call void @LLVMDumpModule(i8* %m)
+  ; CHECK: call %struct.LLVMOpaqueValue* @f.mix({{.*}})
+  %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ()* @f to i8*), i8* %c)
+  call void @LLVMDumpValue(i8* %f)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
@@ -75,4 +76,4 @@ define void @main() {
 declare i8* @llvm.mix.ir(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
-declare void @LLVMDumpModule(i8*)
+declare void @LLVMDumpValue(i8*)
