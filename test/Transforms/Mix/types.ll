@@ -59,23 +59,23 @@ define fp128 @fp128() {
 define void @main() {
   %px = alloca i32
   %c = call i8* @LLVMContextCreate()
-  %i1 = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"i1")
+  %i1 = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i1 ()* @i1 to i8*), i8* %c)
   call void @LLVMDumpModule(i8* %i1)
-  %i44 = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"i44")
+  %i44 = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i44 ()* @i44 to i8*), i8* %c)
   call void @LLVMDumpModule(i8* %i44)
-  %i256 = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"i256")
+  %i256 = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i256 ()* @i256 to i8*), i8* %c)
   call void @LLVMDumpModule(i8* %i256)
-  %half = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"half")
+  %half = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (half ()* @half to i8*), i8* %c)
   call void @LLVMDumpModule(i8* %half)
-  %double = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"double")
+  %double = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (double ()* @double to i8*), i8* %c)
   call void @LLVMDumpModule(i8* %double)
-  %fp128 = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"fp128")
+  %fp128 = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (fp128 ()* @fp128 to i8*), i8* %c)
   call void @LLVMDumpModule(i8* %fp128)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
 
-declare i8* @llvm.mix(i8*, metadata, ...)
+declare i8* @llvm.mix.ir(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpModule(i8*)

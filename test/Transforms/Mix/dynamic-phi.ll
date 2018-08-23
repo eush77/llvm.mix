@@ -66,13 +66,13 @@ exit:
 define void @main() {
   %c = call i8* @LLVMContextCreate()
   ; CHECK: call %struct.LLVMOpaqueModule* @f.mix({{.*}})
-  %m = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"f")
+  %m = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ()* @f to i8*), i8* %c)
   call void @LLVMDumpModule(i8* %m)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
 
-declare i8* @llvm.mix(i8*, metadata, ...)
+declare i8* @llvm.mix.ir(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpModule(i8*)

@@ -32,7 +32,6 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -92,11 +91,6 @@ private:
 
 char Mix::ID;
 
-// Resolve a function by metadata id.
-Function *resolveFunctionId(const Module &M, MetadataAsValue *FID) {
-  return M.getFunction(cast<MDString>(FID->getMetadata())->getString());
-}
-
 } // namespace
 
 bool Mix::runOnModule(Module &M) {
@@ -115,24 +109,24 @@ bool Mix::runOnModule(Module &M) {
 
         auto *Intr = cast<IntrinsicInst>(BBI);
 
-        if (Intr->getIntrinsicID() != Intrinsic::mix) {
+        if (Intr->getIntrinsicID() != Intrinsic::mix_ir) {
           ++BBI;
           continue;
         }
 
-        auto *Specializer = createSpecializer(resolveFunctionId(
-            M, cast<MetadataAsValue>(Intr->getArgOperand(1))));
+        auto *MixedF = cast<Function>(
+            cast<ConstantExpr>(Intr->getArgOperand(0))->getOperand(0));
         auto *StagedContext = new BitCastInst(
-            Intr->getArgOperand(0), mix::getContextPtrTy(M.getContext()),
-            Intr->getArgOperand(0)->getName(), Intr);
+            Intr->getArgOperand(1), mix::getContextPtrTy(M.getContext()),
+            Intr->getArgOperand(1)->getName(), Intr);
 
         SmallVector<Value *, 8> Args;
         Args.push_back(StagedContext);
         Args.append(std::next(std::next(Intr->arg_begin())), Intr->arg_end());
 
-        auto *StagedModule =
-            new BitCastInst(CallInst::Create(Specializer, Args, "", Intr),
-                            Intr->getType(), "", Intr);
+        auto *StagedModule = new BitCastInst(
+            CallInst::Create(createSpecializer(MixedF), Args, "", Intr),
+            Intr->getType(), "", Intr);
         StagedModule->takeName(Intr);
         Intr->replaceAllUsesWith(StagedModule);
         BBI = Intr->eraseFromParent();

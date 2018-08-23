@@ -3978,28 +3978,34 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
       "an array");
     break;
   }
-  case Intrinsic::mix: {
-    Metadata *FID = cast<MetadataAsValue>(CS.getArgOperand(1))->getMetadata();
-    Assert(isa<MDString>(FID),
-           "function-id argument of llvm.mix intrinsic must be a metadata "
-           "string",
+  case Intrinsic::mix_ir: {
+    auto *FID = dyn_cast<ConstantExpr>(CS.getArgOperand(0));
+    Assert(FID, "First argument of llvm.mix.ir is not a constant expression",
            CS);
-    Function *F = M.getFunction(cast<MDString>(FID)->getString());
-    Assert(F, "function not found", FID);
-    Assert(!F->isDeclaration(), "function is not defined in the current module",
-           FID);
-    Assert(F->arg_size() <= CS.arg_size() - 2,
-           "arguments of llvm.mix intrinsic must match static parameters of "
-           "the source function",
+    Assert(FID->getOpcode() == Instruction::BitCast &&
+               isa<Function>(FID->getOperand(0)),
+           "First argument of llvm.mix.ir is not a function identifier", CS);
+    auto *F = cast<Function>(FID->getOperand(0));
+    Assert(!F->isDeclaration(),
+           Twine("Function @") + F->getName() +
+               " is not defined in this module",
            CS);
-    Assert(F->isVarArg() || F->arg_size() == CS.arg_size() - 2,
-           "too many arguments of llvm.mix intrinsic", CS);
-    Assert(std::equal(F->arg_begin(), F->arg_end(), CS.arg_begin() + 2,
-                      [](const auto &Arg, const auto &Op) {
-                        return Arg.getType() == Op->getType();
-                      }),
-           "argument type of llvm.mix intrinsic does not match signature "
-           "of the source function",
+    Assert(
+        F->arg_size() == CS.arg_size() - 2 ||
+            (F->arg_size() < CS.arg_size() - 2 && F->isVarArg()),
+        Twine(F->arg_size() < CS.arg_size() - 2 ? "Too many" : "Not enough") +
+            " arguments for @" + F->getName(),
+        CS);
+    auto M = std::mismatch(F->arg_begin(), F->arg_end(), CS.arg_begin() + 2,
+                           [](const auto &Arg, const auto &Op) {
+                             return Arg.getType() == Op->getType();
+                           });
+    Assert(M.first == F->arg_end(),
+           "The type of argument " + Twine(M.first->getArgNo() + 2) +
+               " does not match the type of parameter " +
+               (M.first->hasName() ? Twine("%") + M.first->getName()
+                                   : Twine(M.first->getArgNo())) +
+               " of @" + F->getName(),
            CS);
     break;
   }

@@ -635,9 +635,9 @@ def int_eh_sjlj_setup_dispatch  : Intrinsic<[], []>;
 //===------------------ Mixed Execution Intrinsics ------------------------===//
 //
 
-def int_mix: Intrinsic<[llvm_ptr_ty],
-                       [llvm_ptr_ty, llvm_metadata_ty, llvm_vararg_ty],
-                       [IntrArgMemOnly]>;
+def int_mix_ir
+    : Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_ptr_ty, llvm_vararg_ty],
+                [IntrArgMemOnly]>;
 
 //===---------------- Generic Variable Attribute Intrinsics----------------===//
 //

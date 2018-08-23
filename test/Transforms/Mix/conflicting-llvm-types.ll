@@ -21,7 +21,7 @@ define void @main() {
   %context = call %struct.LLVMContext* @LLVMContextCreate()
   %c = bitcast %struct.LLVMContext* %context to i8*
   ; CHECK: call %struct.LLVMOpaqueModule* @f.mix({{.*}}, i32 1)
-  %m = call i8* (i8*, metadata, ...) @llvm.mix(i8* %c, metadata !"f", i32 1)
+  %m = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void (i32)* @f to i8*), i8* %c, i32 1)
   %module = bitcast i8* %m to %struct.Module*
   call void @LLVMDumpModule(%struct.Module* %module)
   call void @LLVMContextDispose(%struct.LLVMContext* %context)
@@ -31,7 +31,7 @@ define void @main() {
 %struct.LLVMContext = type opaque
 %struct.Module = type opaque
 
-declare i8* @llvm.mix(i8*, metadata, ...)
+declare i8* @llvm.mix.ir(i8*, i8*, ...)
 declare %struct.LLVMContext* @LLVMContextCreate()
 declare void @LLVMContextDispose(%struct.LLVMContext*)
 declare %struct.Module* @LLVMModuleCreateWithNameInContext(i8*, %struct.LLVMContext*)

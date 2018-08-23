@@ -1148,12 +1148,14 @@ Currently, only the following parameter attributes are defined:
     ``dereferenceable(<n>)``). This attribute may only be applied to
     pointer typed parameters.
 
+.. _stage:
+
 ``stage(<n>)``
     This attribute sets binding-time stage of the parameter. Stage 0 is the
     current stage and the default. Stage 1 is the next stage (after one
     compilation). Stage 2 is the stage after that, and so on. The attribute is
     only used in binding-time analysis and when the function is specialized
-    with :ref:`llvm.mix <_int_mix>`
+    with :ref:`mixed execution intrinsics <_int_mix>`.
 
 ``swiftself``
     This indicates that the parameter is the self/context parameter. This is not
@@ -12375,50 +12377,54 @@ The LLVM exception handling intrinsics (which all start with
 ``llvm.eh.`` prefix), are described in the `LLVM Exception
 Handling <ExceptionHandling.html#format-common-intrinsics>`_ document.
 
+.. _int_mix:
+
 Mixed Execution Intrinsics
 --------------------------
 
 These intrinsics provide access to the Mix runtime for run-time function
 specialization.
 
-.. _int_mix:
-
-'``llvm.mix``' Intrinsic
-^^^^^^^^^^^^^^^^^^^^^^^^
+'``llvm.mix.ir``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Syntax:
 """""""
 
 ::
 
-      declare i8* @llvm.mix(i8* %context, metadata <function-id>, ...)
+      declare i8* @llvm.mix.ir(i8* %function, i8* %context, ...)
 
 Overview:
 """""""""
 
-Creates a specialized IR module containing the representation of a given
-function.
+This intrinsic performs the first stage of multi-stage compilation. Given a
+function in the source program and (dynamic) values of the arguments for the
+first stage, it constructs the IR of the staged function that is the result of
+the first stage.
+
+The expansion of this intrinsic is in fact the specializer for the function,
+generated during the initial build based on the code of the function being
+specialized.
 
 Arguments:
 """"""""""
 
-The argument ``%context`` is a pointer to an ``LLVMContext`` instance to use
-when creating the new IR.
+The argument ``%function`` is a function identifier bitcasted to ``i8*``. The
+function must be defined in the current translation unit.
 
-The argument ``<function-id>`` is a :ref:`metadata string <metadata-string>`
-containing the name of the function to specialize. The function must be
-defined in the current translation unit.
+The argument ``%context`` is a pointer to an ``LLVMContext`` instance.
 
-The rest of the arguments must match the types of the parameters of the
-function specified by ``<function-id>``.
+The rest are arguments for :ref:`stage(0) <_stage>` parameters of
+``%function``.
 
 Semantics:
 """"""""""
 
-The intrinsic specializes the function specified by ``<function-id>`` to the
-values of vararg parameters of the intrinsic. The returned value is a new IR
-module containing the function named ``<function-id>`` with the same return
-type as the original function but no parameters.
+The intrinsic specializes the function referenced by ``%function`` argument to
+the values of vararg parameters of the intrinsic. The return value is a
+pointer to a ``Function`` object representing the IR of a staged function. The
+function is created in a new module owned by the given ``%context``.
 
 .. _int_trampoline:
 
