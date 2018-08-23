@@ -16,9 +16,10 @@
 #include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Intrinsics.h"
-#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 
 #include <algorithm>
@@ -41,8 +42,8 @@ void CodeGenFunction::EmitMixSpecializerBody(FunctionArgList &Args) {
     F = MA->getMixedFunction();
   }
 
-  auto *FID = llvm::MetadataAsValue::get(
-      getLLVMContext(), llvm::MDString::get(getLLVMContext(), F->getName()));
+  auto *FID = llvm::ConstantExpr::getBitCast(
+      CGM.GetAddrOfFunction(F), llvm::Type::getInt8PtrTy(getLLVMContext()));
 
   llvm::SmallVector<llvm::Value *, 8> ArgValues{FID};
 
@@ -52,9 +53,7 @@ void CodeGenFunction::EmitMixSpecializerBody(FunctionArgList &Args) {
                                              A->getName());
                  });
 
-  std::swap(ArgValues[0], ArgValues[1]);
-
-  llvm::Function *MixF = CGM.getIntrinsic(llvm::Intrinsic::mix);
+  llvm::Function *MixF = CGM.getIntrinsic(llvm::Intrinsic::mix_ir);
 
   Builder.CreateStore(Builder.CreateCall(MixF, ArgValues, "module"),
                       ReturnValue);
