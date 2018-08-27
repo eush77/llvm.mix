@@ -79,7 +79,7 @@ public:
 
   // Define static value in the generated function if it is defined elsewhere.
   Value *defineStatic(Value *V);
-  Argument *defineStatic(Argument *A, Argument *SA);
+  Value *defineStatic(Argument *A, Value *SA);
   BasicBlock *defineStatic(BasicBlock *BB);
   Instruction *defineStatic(Instruction *I);
   PHINode *defineStatic(PHINode *Phi, bool Staged);
@@ -152,7 +152,7 @@ private:
   DenseMap<Value *, Instruction *> StagedValues;
   std::unordered_multimap<Value *, std::function<void(Instruction *)>>
       StageCallbacks;
-  DenseMap<Argument *, Argument *> StaticArguments;
+  DenseMap<Argument *, Value *> StaticArguments;
   DenseMap<BasicBlock *, BasicBlock *> StaticBasicBlocks;
   DenseMap<Instruction *, Instruction *> StaticInstructions;
 };
@@ -568,7 +568,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
 }
 
 template <typename IRBuilder>
-Argument *StagedIRBuilder<IRBuilder>::defineStatic(Argument *A, Argument *SA) {
+Value *StagedIRBuilder<IRBuilder>::defineStatic(Argument *A, Value *SA) {
   if (A->getParent() == B.GetInsertBlock()->getParent())
     return A;
 

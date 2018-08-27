@@ -5,7 +5,6 @@
 ; RUN: | opt -verify -disable-output
 
 ; CHECK-LABEL: define i32 @power-iter(i32* %px, i32 %n)
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @power-iter.mix(%struct.LLVMOpaqueContext* %context, i32* %px, i32 %n)
 ; CHECK-STAGE-LABEL: define i32 @power-iter()
 define i32 @power-iter(i32* %px, i32 %n) {
 ; CHECK: entry:

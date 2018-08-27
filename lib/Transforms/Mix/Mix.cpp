@@ -17,11 +17,11 @@
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
@@ -68,18 +68,19 @@ public:
   bool runOnModule(Module &M) override;
 
 private:
-  Function *createSpecializer(Function *F);
-  static FunctionType *getSpecializerType(FunctionType *FT);
-  void buildSpecializer();
-  void buildBasicBlock(BasicBlock *BB, BasicBlock *SBB, Instruction *RetVal);
+  Value *visitMixIRIntrinsicInst(IntrinsicInst &I);
+
+  template <typename ForwardIt>
+  Instruction *buildSpecializer(BasicBlock::iterator I, Value *StagedContext,
+                                ForwardIt StagedArgBegin);
+
+  void buildBasicBlock(BasicBlock *BB, BasicBlock *SBB, BasicBlock *TailSBB);
   void collectDynamicBlocks(BasicBlock *BB,
                             SetVector<BasicBlock *> &DynBBs) const;
   void buildInstruction(Instruction *I) const;
 
-  Module *M{};
-  Function *F{};
+  Function *MixedF{};
   const BindingTimeAnalysis *BTA{};
-  Function *SF{};               // Specializer function.
   std::unique_ptr<IRBuilder<>> B;
   std::unique_ptr<mix::StagedIRBuilder<IRBuilder<>>> SB;
 
@@ -95,118 +96,101 @@ char Mix::ID;
 bool Mix::runOnModule(Module &M) {
   DEBUG(dbgs() << "---- Mix : " << M.getName() << " ----\n\n");
 
-  this->M = &M;
-  bool Changed = false;
+  bool MadeChange = false;
 
   for (auto &F : M) {
     for (auto &BB : F) {
-      for (auto BBI = BB.begin(); BBI != BB.end();) {
-        if (!isa<IntrinsicInst>(BBI)) {
-          ++BBI;
-          continue;
+      for (BasicBlock::iterator BBI = BB.begin(), NextBBI; BBI != BB.end();
+           BBI = NextBBI) {
+        NextBBI = std::next(BBI);
+
+        if (auto *I = dyn_cast<IntrinsicInst>(BBI)) {
+          Value *V;
+
+          switch (I->getIntrinsicID()) {
+          case Intrinsic::mix_ir:
+            V = visitMixIRIntrinsicInst(*I);
+            break;
+
+          default:
+            continue;
+          }
+
+          V->takeName(I);
+          I->replaceAllUsesWith(V);
+          I->eraseFromParent();
+          MadeChange = true;
+
+          // Check if the basic block is split.
+          if (NextBBI->getParent() != &BB) {
+            NextBBI = BB.end();
+          }
         }
-
-        auto *Intr = cast<IntrinsicInst>(BBI);
-
-        if (Intr->getIntrinsicID() != Intrinsic::mix_ir) {
-          ++BBI;
-          continue;
-        }
-
-        auto *MixedF = cast<Function>(
-            cast<ConstantExpr>(Intr->getArgOperand(0))->getOperand(0));
-        auto *StagedContext = new BitCastInst(
-            Intr->getArgOperand(1), mix::getContextPtrTy(M.getContext()),
-            Intr->getArgOperand(1)->getName(), Intr);
-
-        SmallVector<Value *, 8> Args;
-        Args.push_back(StagedContext);
-        Args.append(std::next(std::next(Intr->arg_begin())), Intr->arg_end());
-
-        auto *StagedModule = new BitCastInst(
-            CallInst::Create(createSpecializer(MixedF), Args, "", Intr),
-            Intr->getType(), "", Intr);
-        StagedModule->takeName(Intr);
-        Intr->replaceAllUsesWith(StagedModule);
-        BBI = Intr->eraseFromParent();
-
-        Changed = true;
       }
     }
   }
 
-  return Changed;
+  return MadeChange;
 }
 
-Function *Mix::createSpecializer(Function *F) {
-  this->F = F;
-  BTA = &getAnalysis<BindingTimeAnalysis>(*F);
+Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
+  MixedF =
+      cast<Function>(cast<ConstantExpr>(I.getArgOperand(0))->getOperand(0));
+  BTA = &getAnalysis<BindingTimeAnalysis>(*MixedF);
 
-  DEBUG(dbgs() << "Creating specializer for @" << F->getName() << '\n');
+  auto *StagedContext =
+      new BitCastInst(I.getArgOperand(1), mix::getContextPtrTy(I.getContext()),
+                      I.getArgOperand(1)->getName(), &I);
+  auto StagedArgBegin = std::next(I.arg_begin(), 2);
 
-  // Create specializer function.
-  SF = Function::Create(getSpecializerType(F->getFunctionType()),
-                        GlobalValue::PrivateLinkage,
-                        Twine(F->getName()) + ".mix");
-
-  // Name parameters of the specializer.
-  SF->arg_begin()->setName("context");
-  for (auto ArgIt = F->arg_begin(), SpecArgIt = SF->arg_begin() + 1;
-       ArgIt != F->arg_end(); ++ArgIt, ++SpecArgIt) {
-    SpecArgIt->setName(ArgIt->getName());
-  }
-
-  // Insert specializer function into the module.
-  M->getFunctionList().insertAfter(Module::iterator(F), SF);
-
-  buildSpecializer();
-  return SF;
+  return new BitCastInst(
+      buildSpecializer(I.getIterator(), StagedContext, StagedArgBegin),
+      I.getType(), "", &I);
 }
 
-FunctionType *Mix::getSpecializerType(FunctionType *FT) {
-  SmallVector<Type *, 8> Params;
+// Build function specializer.
+template <typename ForwardIt>
+Instruction *Mix::buildSpecializer(BasicBlock::iterator I, Value *StagedContext,
+                                   ForwardIt StagedArgBegin) {
+  DEBUG(dbgs() << "Building specializer for @" << MixedF->getName() << " in @"
+               << I->getFunction()->getName() << '\n');
 
-  Params.push_back(mix::getContextPtrTy(FT->getContext()));
-  Params.append(FT->param_begin(), FT->param_end());
+  BasicBlock *Entry = I->getParent();
+  BasicBlock *Tail = Entry->splitBasicBlock(I, Entry->getName());
+  Entry->getTerminator()->eraseFromParent();
 
-  return FunctionType::get(mix::getValuePtrTy(FT->getContext()), Params,
-                           FT->isVarArg());
-}
-
-// Build code of the specializer function.
-void Mix::buildSpecializer() {
-  B.reset(new IRBuilder<>(
-      BasicBlock::Create(SF->getContext(), F->getEntryBlock().getName(), SF)));
-  SB.reset(new mix::StagedIRBuilder<IRBuilder<>>(*B, SF->arg_begin()));
+  B.reset(new IRBuilder<>(Entry));
+  SB.reset(new mix::StagedIRBuilder<IRBuilder<>>(*B, StagedContext));
 
   // Build basic definitions for run-time code generator.
-  auto *StagedModule = SB->createModule(Twine(F->getName()) + ".module", "module");
-  auto *StagedFunction = SB->createFunction(
-      FunctionType::get(F->getReturnType(), false),
-      GlobalValue::ExternalLinkage, F->getName(), StagedModule, "function");
+  auto *StagedModule = SB->createModule(MixedF->getName(), "module");
+  auto *StagedFunction =
+      SB->createFunction(FunctionType::get(MixedF->getReturnType(), false),
+                         GlobalValue::ExternalLinkage, MixedF->getName(),
+                         StagedModule, "function");
   SB->createBuilder(StagedFunction, "builder");
 
   // Stage function arguments.
-  for (auto ArgIt = F->arg_begin(), SpecArgIt = SF->arg_begin() + 1;
-       ArgIt != F->arg_end(); ++ArgIt, ++SpecArgIt) {
-    SB->defineStatic(ArgIt, SpecArgIt);
-    SB->stageStatic(ArgIt);
+  for (Argument &A : MixedF->args()) {
+    SB->defineStatic(&A, *StagedArgBegin++);
+    SB->stageStatic(&A);
   }
 
   StaticBasicBlocks.clear();
-  StaticBasicBlocks[&F->getEntryBlock()] = &SF->getEntryBlock();
+  StaticBasicBlocks[&MixedF->getEntryBlock()] = Entry;
 
   for (unsigned SBBNum = 0; SBBNum < StaticBasicBlocks.size(); ++SBBNum) {
-    BasicBlock *BB;
-    BasicBlock *SBB;
+    BasicBlock *BB, *SBB;
     std::tie(BB, SBB) = StaticBasicBlocks.begin()[SBBNum];
 
-    buildBasicBlock(BB, SBB, StagedFunction);
+    buildBasicBlock(BB, SBB, Tail);
   }
+
+  return StagedFunction;
 }
 
 void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
-                          Instruction *RetVal) {
+                          BasicBlock *TailSBB) {
   DEBUG(dbgs() << "  - Building static basic block %" << BB->getName() << '\n');
 
   B->SetInsertPoint(SBB);
@@ -215,7 +199,7 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
   collectDynamicBlocks(BB, DynBBs);
 
   // Build dynamic terminator in the dynamic predecessor block.
-  if (BB != &F->getEntryBlock()) {
+  if (BB != &MixedF->getEntryBlock()) {
     std::unique_ptr<Instruction, ValueDeleter> Br(
         BranchInst::Create(DynBBs.front()));
     SB->stage(Br.get());
@@ -233,7 +217,7 @@ void Mix::buildBasicBlock(BasicBlock *BB, BasicBlock *SBB,
 
   if (isa<ReturnInst>(Term)) {
     SB->disposeBuilder();
-    B->CreateRet(RetVal);
+    B->CreateBr(TailSBB);
   }
 
   // Create new successor static blocks.
