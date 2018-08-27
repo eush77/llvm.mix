@@ -240,13 +240,11 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   // Compute the last stage for this function from the stage numbers assigned
   // to the arguments.
   //
-  // FIXME: It is reasonable to expect the last stage to be N as well as N+1
-  // if N is the maximum stage of the arguments. It is reasonable to expect
-  // function with no arguments and no dynamic effects to be in stage 0 as
-  // well.
+  // TODO: Add stage return attribute that can be used to set the last stage
+  // to either MaxStage (if it is positive) or MaxStage+1.
   LastStage = std::accumulate(F.arg_begin(), F.arg_end(), 1,
                               [](unsigned LS, const Argument &A) {
-                                return std::max(LS, A.getStage() + 1);
+                                return std::max(LS, A.getStage());
                               });
 
   // Initialize slot tracker for printing.

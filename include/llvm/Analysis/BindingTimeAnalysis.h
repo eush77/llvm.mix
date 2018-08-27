@@ -44,7 +44,8 @@ public:
 
   bool runOnFunction(Function &F) override;
 
-  // Last compilation stage of the function.
+  // Last compilation stage of the function, which is also the stage of its
+  // return value.
   unsigned getLastStage() const { return LastStage; }
 
   // Get binding-time stage of a value.

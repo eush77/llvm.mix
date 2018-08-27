@@ -9,5 +9,5 @@ define void @f(i32 stage(0) %x, i32 stage(1) %y, i32 stage(2) %z) {
   %xy = mul i32 %x, %y          ; CHECK-NEXT: stage(1)
   %yz = mul i32 %y, %z          ; CHECK-NEXT: stage(2)
   %xz = mul i32 %x, %z          ; CHECK-NEXT: stage(2)
-  ret void                      ; CHECK-NEXT: stage(3)
+  ret void                      ; CHECK-NEXT: stage(2)
 }
