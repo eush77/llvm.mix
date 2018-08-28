@@ -3985,26 +3985,36 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
     Assert(FID->getOpcode() == Instruction::BitCast &&
                isa<Function>(FID->getOperand(0)),
            "First argument of llvm.mix.ir is not a function identifier", CS);
+
     auto *F = cast<Function>(FID->getOperand(0));
     Assert(!F->isDeclaration(),
            Twine("Function @") + F->getName() +
                " is not defined in this module",
            CS);
-    Assert(
-        F->arg_size() == CS.arg_size() - 2 ||
-            (F->arg_size() < CS.arg_size() - 2 && F->isVarArg()),
-        Twine(F->arg_size() < CS.arg_size() - 2 ? "Too many" : "Not enough") +
-            " arguments for @" + F->getName(),
-        CS);
-    auto M = std::mismatch(F->arg_begin(), F->arg_end(), CS.arg_begin() + 2,
-                           [](const auto &Arg, const auto &Op) {
-                             return Arg.getType() == Op->getType();
-                           });
-    Assert(M.first == F->arg_end(),
-           "The type of argument " + Twine(M.first->getArgNo() + 2) +
+
+    SmallVector<Argument*, 4> Stage0Args;
+    for (auto &A : F->args()) {
+      if (A.getStage() == 0) {
+        Stage0Args.push_back(&A);
+      }
+    }
+    Assert(Stage0Args.size() == CS.arg_size() - 2 ||
+               (Stage0Args.size() < CS.arg_size() - 2 && F->isVarArg()),
+           Twine(Stage0Args.size() < CS.arg_size() - 2 ? "Too many"
+                                                       : "Not enough") +
+               " arguments for @" + F->getName(),
+           CS);
+
+    auto M =
+        std::mismatch(Stage0Args.begin(), Stage0Args.end(), CS.arg_begin() + 2,
+                      [](const auto *A, const auto &Op) {
+                        return A->getType() == Op->getType();
+                      });
+    Assert(M.first == Stage0Args.end(),
+           "The type of argument " + Twine((M.first - Stage0Args.begin()) + 2) +
                " does not match the type of parameter " +
-               (M.first->hasName() ? Twine("%") + M.first->getName()
-                                   : Twine(M.first->getArgNo())) +
+               ((*M.first)->hasName() ? Twine("%") + (*M.first)->getName()
+                                      : Twine((*M.first)->getArgNo())) +
                " of @" + F->getName(),
            CS);
     break;

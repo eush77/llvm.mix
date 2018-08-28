@@ -67,6 +67,20 @@ define i8* @argcount3() {
   ret i8* %h
 }
 
+define void @k(i32 stage(1), float, i8* stage(2)) { ret void }
+
+define i8* @argcount4() {
+  %k = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void (i32, float, i8*)* @k to i8*), i8* null, float 1.)
+  ret i8* %k
+}
+
+define i8* @argcount5() {
+  ; CHECK: Too many arguments for @k
+  ; CHECK: %k = call {{.*}}
+  %k = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void (i32, float, i8*)* @k to i8*), i8* null, i32 1, float 1., i8* null)
+  ret i8* %k
+}
+
 define void @j(i32, i32 %a) { ret void }
 
 define i8* @argtypes0() {
@@ -83,5 +97,11 @@ define i8* @argtypes1() {
   ret i8* %j
 }
 
+define i8* @argtypes2() {
+  ; CHECK: The type of argument 2 does not match the type of parameter 1 of @k
+  ; CHECK: %k = call {{.*}}
+  %k = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void (i32, float, i8*)* @k to i8*), i8* null, i32 1)
+  ret i8* %k
+}
 
 ; CHECK: {{.*}} error: input module is broken!
