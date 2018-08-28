@@ -17,7 +17,6 @@
 #include "clang/AST/Decl.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Function.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -53,8 +52,13 @@ void CodeGenFunction::EmitMixSpecializerBody(FunctionArgList &Args) {
                                              A->getName());
                  });
 
-  llvm::Function *MixF = CGM.getIntrinsic(llvm::Intrinsic::mix_ir);
+  ArgValues[1] = Builder.CreateBitCast(
+      ArgValues[1], llvm::Type::getInt8PtrTy(getLLVMContext()),
+      ArgValues[1]->getName());
 
-  Builder.CreateStore(Builder.CreateCall(MixF, ArgValues, "module"),
-                      ReturnValue);
+  llvm::Value *RetVal = Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::mix_ir),
+                                     ArgValues, "function");
+  RetVal = Builder.CreateBitCast(RetVal, CurFn->getReturnType(), "function");
+
+  Builder.CreateStore(RetVal, ReturnValue);
 }
