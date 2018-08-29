@@ -63,6 +63,7 @@ public:
                               Instruction *StagedModule = nullptr,
                               const Twine &InstName = "");
   Instruction *setLinkage(Value *Global, GlobalValue::LinkageTypes Linkage);
+  Instruction *setName(Instruction *I, StringRef Name);
   Instruction *createBuilder(Instruction *StagedFunction,
                              const Twine &InstName = "");
   Instruction *positionBuilderAtEnd(Instruction *StagedBasicBlock,
@@ -233,6 +234,13 @@ StagedIRBuilder<IRBuilder>::setLinkage(Value *Global,
 
   return B.CreateCall(getSetLinkageFn(),
                       {Global, ConstantInt::get(getLinkageTy(), CAPILinkage)});
+}
+
+// Set name of a staged value.
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::setName(Instruction *I,
+                                                 StringRef Name) {
+  return B.CreateCall(getSetValueNameFn(), {I, stage(Name)});
 }
 
 template <typename IRBuilder>

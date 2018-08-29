@@ -18,6 +18,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 #include "llvm/IR/BasicBlock.h"
@@ -163,29 +164,38 @@ Instruction *Mix::buildSpecializer(BasicBlock::iterator I, Value *StagedContext,
   B.reset(new IRBuilder<>(Entry));
   SB.reset(new mix::StagedIRBuilder<IRBuilder<>>(*B, StagedContext));
 
-  SmallVector<Type *, 4> DynamicParamTypes;
+  SmallVector<Type *, 4> DynamicArgTypes;
+  SmallVector<StringRef, 4> DynamicArgNames;
+
+  // Gather some info on dynamic arguments.
   for (Argument &A : MixedF->args()) {
     if (A.getStage() > 0) {
-      DynamicParamTypes.push_back(A.getType());
+      DynamicArgTypes.push_back(A.getType());
+      DynamicArgNames.push_back(A.getName());
     }
   }
 
   // Build basic definitions for run-time code generator.
   auto *StagedModule = SB->createModule(MixedF->getName(), "module");
   auto *StagedFunction = SB->createFunction(
-      FunctionType::get(MixedF->getReturnType(), DynamicParamTypes, false),
+      FunctionType::get(MixedF->getReturnType(), DynamicArgTypes, false),
       GlobalValue::ExternalLinkage, MixedF->getName(), StagedModule,
       "function");
   SB->createBuilder(StagedFunction, "builder");
 
   // Stage function arguments.
-  unsigned NumDynamicArgs = 0;
-  for (Argument &A : MixedF->args()) {
-    if (A.getStage() == 0) {
-      SB->defineStatic(&A, *StagedArgBegin++);
-      SB->stageStatic(&A);
-    } else {
-      SB->stage(&A, NumDynamicArgs++);
+  {
+    unsigned DynamicArgNum = 0;
+
+    for (Argument &A : MixedF->args()) {
+      if (A.getStage() == 0) {
+        SB->defineStatic(&A, *StagedArgBegin++);
+        SB->stageStatic(&A);
+      } else {
+        SB->setName(SB->stage(&A, DynamicArgNum),
+                    DynamicArgNames[DynamicArgNum]);
+        DynamicArgNum += 1;
+      }
     }
   }
 

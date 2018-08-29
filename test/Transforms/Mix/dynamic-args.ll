@@ -5,9 +5,9 @@
 ; RUN: | opt -verify -disable-output
 
 ; CHECK-LABEL: define i32 @f(i32 %n, i32 stage(1) %x)
-; CHECK-STAGE-LABEL: define i32 @f(i32)
+; CHECK-STAGE-LABEL: define i32 @f(i32 %x)
 define i32 @f(i32 %n, i32 stage(1) %x) {
-  ; CHECK-STAGE: %y = add i32 %0, 4
+  ; CHECK-STAGE: %y = add i32 %x, 4
   %y = add i32 %x, %n
   ret i32 %y
 }
