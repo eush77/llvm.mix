@@ -76,6 +76,7 @@ public:
   // which case return the previous value. Staging a value that is a basic
   // block means creating an empty basic block in the staged function.
   Instruction *stage(Value *V);
+  Instruction *stage(Argument *A, unsigned ArgNo);
 
   // Define static value in the generated function if it is defined elsewhere.
   Value *defineStatic(Value *V);
@@ -133,7 +134,6 @@ private:
   }
 #include "CAPIFunctions.def"
 
-  Instruction *stageArgument(Argument *Arg);
   Instruction *stageBasicBlock(BasicBlock *Block);
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
@@ -371,11 +371,16 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 }
 
 template <typename IRBuilder>
-Instruction *StagedIRBuilder<IRBuilder>::stageArgument(Argument *Arg) {
-  return B.CreateCall(
+Instruction *StagedIRBuilder<IRBuilder>::stage(Argument *Arg, unsigned ArgNo) {
+  assert(!StagedValues.count(Arg) && "Argument has already been staged");
+
+  Instruction *StagedArg = B.CreateCall(
       getGetParamFn(),
-      {StagedFunction, ConstantInt::get(getUnsignedIntTy(), Arg->getArgNo())},
+      {StagedFunction, ConstantInt::get(getUnsignedIntTy(), ArgNo)},
       Arg->getName());
+
+  addStagedValue(Arg, StagedArg);
+  return StagedArg;
 }
 
 template <typename IRBuilder>
@@ -548,9 +553,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
   if (StagedV)
     return StagedV;
 
-  if (auto *Arg = dyn_cast<Argument>(V)) {
-    StagedV = stageArgument(Arg);
-  } else if (auto *Block = dyn_cast<BasicBlock>(V)) {
+  if (auto *Block = dyn_cast<BasicBlock>(V)) {
     StagedV = stageBasicBlock(Block);
   } else if (auto *Const = dyn_cast<Constant>(V)) {
     StagedV = stageStatic(Const);
