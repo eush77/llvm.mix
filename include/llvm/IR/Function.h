@@ -377,9 +377,28 @@ public:
     return AttributeSets.getParamAlignment(ArgNo);
   }
 
+  /// @brief True if the function is staged.
+  bool isStaged() const {
+    return hasFnAttribute(Attribute::Stage);
+  }
+
+  /// @brief Get last stage - the number of times the function must be
+  /// partially applied before executing.
+  unsigned getLastStage() const {
+    assert(isStaged() && "Function is not staged");
+    return AttributeSets.getStage(AttributeList::FunctionIndex);
+  }
+
+  /// @brief Get stage of the return value.
+  unsigned getReturnStage() const {
+    assert(isStaged() && "Function is not staged");
+    return AttributeSets.getStage(AttributeList::ReturnIndex);
+  }
+
   /// @brief Extract binding-time stage for a parameter.
   unsigned getParamStage(unsigned ArgNo) const {
-    return AttributeSets.getParamStage(ArgNo);
+    assert(isStaged() && "Function is not staged");
+    return AttributeSets.getStage(AttributeList::FirstArgIndex + ArgNo);
   }
 
   /// @brief Extract the number of dereferenceable bytes for a call or

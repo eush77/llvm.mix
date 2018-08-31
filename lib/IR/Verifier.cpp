@@ -1406,7 +1406,7 @@ static bool isFuncOnlyAttr(Attribute::AttrKind Kind) {
 /// arguments.
 static bool isFuncOrArgAttr(Attribute::AttrKind Kind) {
   return Kind == Attribute::ReadOnly || Kind == Attribute::WriteOnly ||
-         Kind == Attribute::ReadNone;
+         Kind == Attribute::ReadNone || Kind == Attribute::Stage;
 }
 
 void Verifier::verifyAttributeTypes(AttributeSet Attrs, bool IsFunction,
@@ -1522,6 +1522,14 @@ void Verifier::verifyParameterAttrs(AttributeSet Attrs, Type *Ty,
            "with pointer type!",
            V);
   }
+
+  if (isa<Function>(V) && !cast<Function>(V)->isStaged()) {
+    Assert(
+        !Attrs.hasAttribute(Attribute::Stage),
+        "Attribute 'stage' only applies to functions and parameters of staged "
+        "functions",
+        V);
+  }
 }
 
 // Check parameter attributes against a function type.
@@ -1536,6 +1544,7 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
   bool SawSRet = false;
   bool SawSwiftSelf = false;
   bool SawSwiftError = false;
+  unsigned MaxArgStage = 0;
 
   // Verify return value attributes.
   AttributeSet RetAttrs = Attrs.getRetAttributes();
@@ -1602,6 +1611,8 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
       Assert(i == FT->getNumParams() - 1,
              "inalloca isn't on the last parameter!", V);
     }
+
+    MaxArgStage = std::max(MaxArgStage, ArgAttrs.getStage());
   }
 
   if (!Attrs.hasAttributes(AttributeList::FunctionIndex))
@@ -1634,6 +1645,18 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
   Assert(!(Attrs.hasFnAttribute(Attribute::NoInline) &&
            Attrs.hasFnAttribute(Attribute::AlwaysInline)),
          "Attributes 'noinline and alwaysinline' are incompatible!", V);
+
+  Assert(Attrs.getStage(AttributeList::ReturnIndex) <=
+             Attrs.getStage(AttributeList::FunctionIndex),
+         "Last stage of a function is not compatible with the stage of its "
+         "return value",
+         V);
+
+  Assert((Attrs.getStage(AttributeList::FunctionIndex) == MaxArgStage ||
+          Attrs.getStage(AttributeList::FunctionIndex) == MaxArgStage + 1),
+         "Last stage of a function is not compatible with stages of its "
+         "arguments",
+         V);
 
   if (Attrs.hasFnAttribute(Attribute::OptimizeNone)) {
     Assert(Attrs.hasFnAttribute(Attribute::NoInline),

@@ -1107,6 +1107,13 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
       B.addAllocSizeAttr(ElemSizeArg, NumElemsArg);
       continue;
     }
+    case lltok::kw_stage: {
+      unsigned StageNum;
+      if (ParseOptionalStage(StageNum))
+        return true;
+      B.addStageAttr(StageNum);
+      continue;
+    }
     case lltok::kw_alwaysinline: B.addAttribute(Attribute::AlwaysInline); break;
     case lltok::kw_argmemonly: B.addAttribute(Attribute::ArgMemOnly); break;
     case lltok::kw_builtin: B.addAttribute(Attribute::Builtin); break;
@@ -1172,7 +1179,6 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
     case lltok::kw_nonnull:
     case lltok::kw_returned:
     case lltok::kw_sret:
-    case lltok::kw_stage:
     case lltok::kw_swifterror:
     case lltok::kw_swiftself:
       HaveError |=
@@ -1525,6 +1531,13 @@ bool LLParser::ParseOptionalReturnAttrs(AttrBuilder &B) {
       B.addDereferenceableOrNullAttr(Bytes);
       continue;
     }
+    case lltok::kw_stage: {
+      unsigned StageNum;
+      if (ParseOptionalStage(StageNum))
+        return true;
+      B.addStageAttr(StageNum);
+      continue;
+    }
     case lltok::kw_align: {
       unsigned Alignment;
       if (ParseOptionalAlignment(Alignment))
@@ -1545,7 +1558,6 @@ bool LLParser::ParseOptionalReturnAttrs(AttrBuilder &B) {
     case lltok::kw_nocapture:
     case lltok::kw_returned:
     case lltok::kw_sret:
-    case lltok::kw_stage:
     case lltok::kw_swifterror:
     case lltok::kw_swiftself:
       HaveError |= Error(Lex.getLoc(), "invalid use of parameter-only attribute");

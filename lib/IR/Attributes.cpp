@@ -1278,8 +1278,8 @@ unsigned AttributeList::getStackAlignment(unsigned Index) const {
   return getAttributes(Index).getStackAlignment();
 }
 
-unsigned AttributeList::getParamStage(unsigned ArgNo) const {
-  return getAttributes(ArgNo + FirstArgIndex).getStage();
+unsigned AttributeList::getStage(unsigned Index) const {
+  return getAttributes(Index).getStage();
 }
 
 uint64_t AttributeList::getDereferenceableBytes(unsigned Index) const {
@@ -1362,6 +1362,7 @@ AttrBuilder &AttrBuilder::addAttribute(Attribute::AttrKind Val) {
   assert((unsigned)Val < Attribute::EndAttrKinds && "Attribute out of range!");
   assert(Val != Attribute::Alignment && Val != Attribute::StackAlignment &&
          Val != Attribute::Dereferenceable && Val != Attribute::AllocSize &&
+         Val != Attribute::Stage &&
          "Adding integer attribute without adding a value!");
   Attrs[Val] = true;
   return *this;
@@ -1503,6 +1504,9 @@ AttrBuilder &AttrBuilder::merge(const AttrBuilder &B) {
   if (!StackAlignment)
     StackAlignment = B.StackAlignment;
 
+  if (!Stage)
+    Stage = B.Stage;
+
   if (!DerefBytes)
     DerefBytes = B.DerefBytes;
 
@@ -1625,6 +1629,9 @@ AttrBuilder AttributeFuncs::typeIncompatible(Type *Ty) {
       .addAttribute(Attribute::ReadOnly)
       .addAttribute(Attribute::StructRet)
       .addAttribute(Attribute::InAlloca);
+
+  if (Ty->isVoidTy())
+    Incompatible.addStageAttr(1); // the int here is ignored
 
   return Incompatible;
 }
