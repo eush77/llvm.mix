@@ -63,6 +63,9 @@ bool BindingTimeAnalysis::isLastStage(const Instruction *I) const {
   case Instruction::Switch:
     return false;
 
+  case Instruction::Ret:
+    return I->getNumOperands() == 0;
+
   case Instruction::Alloca:
   case Instruction::Call:
   case Instruction::Invoke:
@@ -157,7 +160,11 @@ void BindingTimeAnalysis::initializeWorklist() {
 
     for (const Instruction &I : BB) {
       if (isLastStage(&I)) {
-        enqueue(&I, LastStage, WorklistItem::LastStage);
+        enqueue(&I, F->getLastStage(), WorklistItem::LastStage);
+      } else if (isa<ReturnInst>(I)) {
+        assert(I.getNumOperands() != 0 &&
+               "`ret void' must be in the last stage");
+        enqueue(&I, F->getReturnStage(), WorklistItem::ReturnStage);
       } else {
         enqueue(&I, 0, WorklistItem::Default);
       }
@@ -168,7 +175,8 @@ void BindingTimeAnalysis::initializeWorklist() {
 // At each stage, every basic block has to have at most one terminator.
 void BindingTimeAnalysis::fixTerminators() {
   for (auto &SourceBB : *F) {
-    for (unsigned Stage = getStage(&SourceBB); Stage <= LastStage; ++Stage) {
+    for (unsigned Stage = getStage(&SourceBB); Stage <= F->getLastStage();
+         ++Stage) {
       const TerminatorInst *Term = nullptr;
 
       for (auto BBIter = df_begin(&SourceBB); BBIter != df_end(&SourceBB);) {
@@ -233,19 +241,12 @@ void BindingTimeAnalysis::fix() {
 }
 
 bool BindingTimeAnalysis::runOnFunction(Function &F) {
+  if (!F.isStaged())
+    return false;
+
   DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
   this->F = &F;
-
-  // Compute the last stage for this function from the stage numbers assigned
-  // to the arguments.
-  //
-  // TODO: Add stage return attribute that can be used to set the last stage
-  // to either MaxStage (if it is positive) or MaxStage+1.
-  LastStage = std::accumulate(F.arg_begin(), F.arg_end(), 1,
-                              [](unsigned LS, const Argument &A) {
-                                return std::max(LS, A.getStage());
-                              });
 
   // Initialize slot tracker for printing.
   MST.emplace(F.getParent());
@@ -269,6 +270,7 @@ bool BindingTimeAnalysis::isAnalyzed(const Value *V) const {
 }
 
 unsigned BindingTimeAnalysis::getStage(const Value *V) const {
+  assert(F->isStaged() && "Function is not staged");
   assert((DefaultToStage0 || isAnalyzed(V)) && "Value has not been analyzed");
 
   if (isa<Constant>(V))
@@ -278,6 +280,8 @@ unsigned BindingTimeAnalysis::getStage(const Value *V) const {
 }
 
 unsigned BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
+  assert(F->isStaged() && "Function is not staged");
+
   return std::accumulate(Phi->op_begin(), Phi->op_end(), 0,
                          [this](unsigned Stage, const Value *V) {
                            return std::max(Stage, getStage(V));
@@ -339,6 +343,10 @@ void BindingTimeAnalysis::WorklistItem::print(raw_ostream &OS,
 
   case PredTerminator:
     OS << "predecessor terminator";
+    break;
+
+  case ReturnStage:
+    OS << "return stage";
     break;
 
   case StageTerminator:
@@ -468,13 +476,13 @@ class BindingTimeAnalysisColorAssemblyAnnotationWriter
   using Base = BindingTimeAnalysisPlainAssemblyAnnotationWriter;
 
 public:
-  explicit BindingTimeAnalysisColorAssemblyAnnotationWriter(
-      BindingTimeAnalysis &BTA)
-      : Base(BTA) {}
+  BindingTimeAnalysisColorAssemblyAnnotationWriter(const Function &F,
+                                                   BindingTimeAnalysis &BTA)
+      : Base(BTA), F(F) {}
 
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
                                 formatted_raw_ostream &OS) override {
-    if (BTA.getStage(BB) < BTA.getLastStage()) {
+    if (BTA.getStage(BB) < F.getLastStage()) {
       setColor(OS);
     }
 
@@ -485,7 +493,7 @@ public:
   void emitInstructionAnnot(const Instruction *I,
                             formatted_raw_ostream &OS) override {
     // Set color for the static instruction.
-    if (BTA.getStage(I) < BTA.getLastStage()) {
+    if (BTA.getStage(I) < F.getLastStage()) {
       setColor(OS);
     }
   }
@@ -494,7 +502,7 @@ public:
     Base::printInfoComment(V, OS);
 
     // Reset color after a static instruction.
-    if (BTA.getStage(&V) < BTA.getLastStage()) {
+    if (BTA.getStage(&V) < F.getLastStage()) {
       resetColor(OS);
     }
 
@@ -504,7 +512,7 @@ public:
       Function::const_iterator NextBB(std::next(BB));
 
       if (NextBB != BB->getParent()->end() &&
-          BTA.getStage(&*NextBB) < BTA.getLastStage()) {
+          BTA.getStage(&*NextBB) < F.getLastStage()) {
         setColor(OS);
       }
     }
@@ -518,6 +526,8 @@ private:
   static void resetColor(formatted_raw_ostream &OS) {
     OS.resetColor();
   }
+
+  const Function &F;
 };
 
 } // namespace llvm
@@ -536,7 +546,7 @@ public:
   void emitFunctionAnnot(const Function *F,
                          formatted_raw_ostream &OS) override {
     if (OS.has_colors()) {
-      Impl.reset(new BindingTimeAnalysisColorAssemblyAnnotationWriter(BTA));
+      Impl.reset(new BindingTimeAnalysisColorAssemblyAnnotationWriter(*F, BTA));
     } else {
       Impl.reset(new BindingTimeAnalysisPlainAssemblyAnnotationWriter(BTA));
     }
@@ -571,6 +581,8 @@ private:
 } // namespace
 
 void BindingTimeAnalysis::print(raw_ostream &OS, const Function &F) {
+  assert(F.isStaged() && "Function is not staged");
+
   BindingTimeAnalysisAssemblyAnnotationWriter AAW(*this);
   F.print(OS, &AAW);
 }
@@ -593,7 +605,9 @@ public:
   }
 
   bool runOnFunction(Function &F) override {
-    getAnalysis<BindingTimeAnalysis>().print(errs(), F);
+    if (F.isStaged()) {
+      getAnalysis<BindingTimeAnalysis>().print(errs(), F);
+    }
     return false;
   }
 };

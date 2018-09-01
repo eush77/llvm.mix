@@ -1,10 +1,10 @@
 ; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=stage
 
-; CHECK-LABEL: define i32 @power-iter(i32* %px, i32 %n)
-define i32 @power-iter(i32* %px, i32 %n) {
+; CHECK-LABEL: Function Attrs: stage(1)
+; CHECK-NEXT: define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n)
+define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n) stage(1) {
 ; CHECK-LABEL: {{^}}entry:
 entry:                          ; CHECK-NEXT: stage(0)
-  %x = load i32, i32* %px       ; CHECK-NEXT: stage(1)
   br label %check-next          ; CHECK-NEXT: stage(0)
 
 ; CHECK-LABEL: {{^}}check-next:

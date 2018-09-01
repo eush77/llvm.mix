@@ -44,10 +44,6 @@ public:
 
   bool runOnFunction(Function &F) override;
 
-  // Last compilation stage of the function, which is also the stage of its
-  // return value.
-  unsigned getLastStage() const { return LastStage; }
-
   // Get binding-time stage of a value.
   unsigned getStage(const Value *V) const;
 
@@ -89,6 +85,7 @@ private:
       Operand,
       Parent,
       PredTerminator,
+      ReturnStage,
       StageTerminator,
       Successor,
       TransitiveOperand,
@@ -140,9 +137,6 @@ private:
 
   // Current function.
   Function *F{};
-
-  // Last stage for the current function.
-  unsigned LastStage{};
 
   // Slot tracker for printing.
   Optional<ModuleSlotTracker> MST;
