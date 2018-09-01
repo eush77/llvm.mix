@@ -2,6 +2,9 @@
 
 declare i32 @f(i32 %x, i32 stage(1) %n) stage(1)
 declare stage(1) i32 @f1(i32 %x, i32 stage(1) %n) stage(2)
+declare stage(1) i32 @f2(i32 %x, i32 stage(1) %n) #2
+
+attributes #2 = { stage=2 }
 
 ; CHECK: Attribute 'stage' only applies to functions and parameters of staged functions
 ; CHECK-NEXT: void (i32)* @notstaged

@@ -250,7 +250,7 @@ namespace llvm {
     bool ParseOptionalCallingConv(unsigned &CC);
     bool ParseOptionalAlignment(unsigned &Alignment);
     bool ParseOptionalDerefAttrBytes(lltok::Kind AttrKind, uint64_t &Bytes);
-    bool ParseOptionalStage(unsigned &StageNum);
+    bool ParseOptionalStage(unsigned &StageNum, bool InAttrGrp = false);
     bool ParseScopeAndOrdering(bool isAtomic, SyncScope::ID &SSID,
                                AtomicOrdering &Ordering);
     bool ParseScope(SyncScope::ID &SSID);

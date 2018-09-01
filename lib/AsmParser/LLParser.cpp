@@ -1109,7 +1109,7 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
     }
     case lltok::kw_stage: {
       unsigned StageNum;
-      if (ParseOptionalStage(StageNum))
+      if (ParseOptionalStage(StageNum, inAttrGrp))
         return true;
       B.addStageAttr(StageNum);
       continue;
@@ -1921,21 +1921,22 @@ bool LLParser::ParseOptionalDerefAttrBytes(lltok::Kind AttrKind,
 /// ParseOptionalStage
 ///   ::= /* empty */
 ///   ::= stage '(' 4 ')'
-bool LLParser::ParseOptionalStage(unsigned &StageNum) {
+///   ::= stage '=' 4
+bool LLParser::ParseOptionalStage(unsigned &StageNum, bool InAttrGrp) {
   StageNum = 0;
   if (!EatIfPresent(lltok::kw_stage))
     return false;
-  LocTy ParenLoc = Lex.getLoc();
-  if (!EatIfPresent(lltok::lparen))
-    return Error(ParenLoc, "expected '('");
+  LocTy Loc = Lex.getLoc();
+  if (!EatIfPresent(InAttrGrp ? lltok::equal : lltok::lparen))
+    return Error(Loc, InAttrGrp ? "expected '='" : "expected '('");
   {
     uint32_t Val;
     if (ParseUInt32(Val)) return true;
     StageNum = Val;
   }
-  ParenLoc = Lex.getLoc();
-  if (!EatIfPresent(lltok::rparen))
-    return Error(ParenLoc, "expected ')'");
+  Loc = Lex.getLoc();
+  if (!InAttrGrp && !EatIfPresent(lltok::rparen))
+    return Error(Loc, "expected ')'");
   return false;
 }
 
