@@ -17,11 +17,14 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/InstrTypes.h"
@@ -45,6 +48,7 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
+#include <string>
 #include <utility>
 
 using namespace llvm;
@@ -143,6 +147,15 @@ void BindingTimeAnalysis::fixInstruction(const Instruction *I,
     for (const BasicBlock *BB : Term->successors()) {
       enqueue(BB, MaxOperandStage, WorklistItem::PredTerminator, Term);
     }
+
+    if (isa<ReturnInst>(I) && I->getNumOperands() != 0 &&
+        F->getReturnStage() < MaxOperandStage) {
+      F->getContext().diagnose(DiagnosticInfoMix(
+          DS_Error,
+          "Inferred stage(" + Twine(MaxOperandStage) +
+              (") contradicts the declared return stage of @") + F->getName(),
+          I));
+    }
   }
 }
 
@@ -201,17 +214,25 @@ void BindingTimeAnalysis::fixTerminators() {
           std::swap(Term, T);
         }
 
-        bool PrintErr = true;
-        DEBUG(PrintErr = false);
-
-        if (PrintErr) {
-          errs() << "Multiple stage-" << Stage << " terminators of "
-                 << printName(&SourceBB) << ":\n"
-                 << printInstWithBlock(Term, "                ")
-                 << printInstWithBlock(T, "  (=>next stage)");
+        // Favor function returns.
+        if (isa<ReturnInst>(T) && !isa<ReturnInst>(Term)) {
+          std::swap(Term, T);
         }
 
         enqueue(T, Stage + 1, WorklistItem::StageTerminator, Term, &SourceBB);
+
+        // Don't emit the diagnostic in the debug mode.
+        DEBUG(continue);
+
+        F->getContext().diagnose(
+            DiagnosticInfoMix(DS_Warning,
+                              "Multiple stage(" + Twine(Stage) +
+                                  ") terminators of %" + SourceBB.getName(),
+                              Term));
+        F->getContext().diagnose(DiagnosticInfoMix(
+            DS_Note,
+            "The other terminator is moved to stage(" + Twine(Stage + 1) + ")",
+            T));
       }
     }
   }
@@ -220,6 +241,8 @@ void BindingTimeAnalysis::fixTerminators() {
 // Compute a fixed point of binding-time rules.
 void BindingTimeAnalysis::fix() {
   do {
+    DEBUG(dbgs() << '\n');
+
     while (auto WI = popItem()) {
       unsigned IS = WI->getIncomingStage();
 
@@ -244,7 +267,7 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   if (!F.isStaged())
     return false;
 
-  DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
+  DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n");
 
   this->F = &F;
 
@@ -350,7 +373,7 @@ void BindingTimeAnalysis::WorklistItem::print(raw_ostream &OS,
     break;
 
   case StageTerminator:
-    OS << "stage-" << (InStage - 1) << " terminator of "
+    OS << "stage(" << (InStage - 1) << ") terminator of "
        << BTA.printName(cast<BasicBlock>(Arg));
     break;
 
@@ -431,7 +454,8 @@ Printable BindingTimeAnalysis::printInstWithBlock(const Instruction *I,
 
     FOS << Prefix;
     I->print(FOS, *MST);
-    FOS.PadToColumn(CommentColumn) << "; " << printName(I->getParent()) << '\n';
+    FOS.PadToColumn(CommentColumn)
+        << "; in " << printName(I->getParent()) << '\n';
   });
 }
 
@@ -621,3 +645,20 @@ INITIALIZE_PASS_BEGIN(BindingTimeAnalysisPrinter, "print-bta",
 INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
 INITIALIZE_PASS_END(BindingTimeAnalysisPrinter, "print-bta",
                     "Binding-Time Analysis Printer", false, true)
+
+void DiagnosticInfoMix::print(DiagnosticPrinter &DP) const {
+  DP << Msg;
+
+  if (!I)
+    return;
+
+  std::string S;
+  raw_string_ostream OS(S);
+  formatted_raw_ostream FOS(OS);
+
+  FOS << ":\n" << *I;
+  FOS.PadToColumn(CommentColumn) << "; in %" << I->getParent()->getName();
+  FOS.flush();
+
+  DP << S;
+}

@@ -19,6 +19,7 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
@@ -29,11 +30,13 @@
 namespace llvm {
 
 class Argument;
+class DiagnosticPrinter;
 class Function;
 class Instruction;
 class PHINode;
 class raw_ostream;
 class TerminatorInst;
+class Twine;
 class Value;
 
 class BindingTimeAnalysis : public FunctionPass {
@@ -140,6 +143,26 @@ private:
 
   // Slot tracker for printing.
   Optional<ModuleSlotTracker> MST;
+};
+
+class DiagnosticInfoMix : public DiagnosticInfo {
+public:
+  static bool classof(const DiagnosticInfo *DI) {
+    return DI->getKind() == DK_Mix;
+  }
+
+  DiagnosticInfoMix(DiagnosticSeverity Severity, const Twine &Msg,
+                    const Instruction *I = nullptr)
+      : DiagnosticInfo(DK_Mix, Severity), Msg(Msg), I(I) {}
+
+  const Twine &getMessage() const { return Msg; }
+  const Instruction *getInstruction() const { return I; }
+
+  void print(DiagnosticPrinter &DP) const override;
+
+private:
+  const Twine &Msg;
+  const Instruction *I;
 };
 
 } // end namespace llvm
