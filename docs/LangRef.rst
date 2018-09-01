@@ -1151,11 +1151,11 @@ Currently, only the following parameter attributes are defined:
 .. _stage:
 
 ``stage(<n>)``
-    This attribute sets binding-time stage of the parameter. Stage 0 is the
-    current stage and the default. Stage 1 is the next stage (after one
-    compilation). Stage 2 is the stage after that, and so on. The attribute is
-    only used in binding-time analysis and when the function is specialized
-    with :ref:`mixed execution intrinsics <_int_mix>`.
+    This attribute sets binding-time stage of the parameter of a :ref:`staged
+    function <_func_stage>`. Stage 0 is the current stage and the default.
+    Stage 1 is the next stage (after one compilation). Stage 2 is the stage
+    after that, and so on. When applied to non-void return values, the
+    attribute indicates at which stage the value becomes available.
 
 ``swiftself``
     This indicates that the parameter is the self/context parameter. This is not
@@ -1687,6 +1687,16 @@ example:
     If a function that has an ``sspstrong`` attribute is inlined into a
     function that doesn't have an ``sspstrong`` attribute, then the
     resulting function will have an ``sspstrong`` attribute.
+
+.. _func_stage:
+
+``stage``
+    This attribute indicates that the function is to be staged with a
+    :ref:`mixed execution intrinsic <_int_mix>` (directly or indirectly). The
+    value of the attribute is the number of compilations of the function, and
+    it must be either equal to, or one above the maximum stage of the
+    arguments.
+
 ``strictfp``
     This attribute indicates that the function was called from a scope that
     requires strict floating point semantics.  LLVM will not attempt any
