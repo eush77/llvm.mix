@@ -1648,14 +1648,16 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
 
   Assert(Attrs.getStage(AttributeList::ReturnIndex) <=
              Attrs.getStage(AttributeList::FunctionIndex),
-         "Last stage of a function is not compatible with the stage of its "
-         "return value",
+         Twine("Last stage of @") + V->getName() +
+             " is not compatible with the stage of its "
+             "return value",
          V);
 
   Assert((Attrs.getStage(AttributeList::FunctionIndex) == MaxArgStage ||
           Attrs.getStage(AttributeList::FunctionIndex) == MaxArgStage + 1),
-         "Last stage of a function is not compatible with stages of its "
-         "arguments",
+         Twine("Last stage of @") + V->getName() +
+             " is not compatible with the stages of its "
+             "arguments",
          V);
 
   if (Attrs.hasFnAttribute(Attribute::OptimizeNone)) {
@@ -4013,6 +4015,8 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
     Assert(!F->isDeclaration(),
            Twine("Function @") + F->getName() +
                " is not defined in this module",
+           CS);
+    Assert(F->isStaged(), Twine("Function @") + F->getName() + " is not staged",
            CS);
 
     SmallVector<Argument*, 4> Stage0Args;

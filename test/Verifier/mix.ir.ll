@@ -2,7 +2,7 @@
 
 declare i8* @llvm.mix.ir(i8*, i8*, ...)
 
-define void @f(i32) { ret void }
+define void @f(i32) stage(1) { ret void }
 
 define i8* @f.mix(i8* %ctx, i32 %x) {
   %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void (i32)* @f to i8*), i8* %ctx, i32 %x)
@@ -30,13 +30,22 @@ define i8* @notid() {
   ret i8* %f
 }
 
-declare void @g()
+declare void @g() stage(1)
 
 define i8* @nobody() {
   ; CHECK: Function @g is not defined in this module
   ; CHECK: %g = call {{.*}}
   %g = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void ()* @g to i8*), i8* null)
   ret i8* %g
+}
+
+define void @l() { ret void }
+
+define i8* @notstaged() {
+  ; CHECK: Function @l is not staged
+  ; CHECK: %l = call {{.*}}
+  %l = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void ()* @l to i8*), i8* null)
+  ret i8* %l
 }
 
 define i8* @argcount0() {
@@ -53,7 +62,7 @@ define i8* @argcount1() {
   ret i8* %f
 }
 
-define void @h(i32, ...) { ret void }
+define void @h(i32, ...) stage(1) { ret void }
 
 define i8* @argcount2() {
   ; CHECK: Not enough arguments for @h
@@ -67,7 +76,7 @@ define i8* @argcount3() {
   ret i8* %h
 }
 
-define void @k(i32 stage(1), float, i8* stage(2)) { ret void }
+define void @k(i32 stage(1), float, i8* stage(2)) stage(2) { ret void }
 
 define i8* @argcount4() {
   %k = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void (i32, float, i8*)* @k to i8*), i8* null, float 1.)
@@ -81,7 +90,7 @@ define i8* @argcount5() {
   ret i8* %k
 }
 
-define void @j(i32, i32 %a) { ret void }
+define void @j(i32, i32 %a) stage(1) { ret void }
 
 define i8* @argtypes0() {
   ; CHECK: The type of argument 2 does not match the type of parameter 0 of @j

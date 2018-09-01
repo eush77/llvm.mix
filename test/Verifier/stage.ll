@@ -15,15 +15,15 @@ declare stage(1) i32 @notstaged1()
 ; CHECK-NEXT: void (i32)* @retstage
 declare stage(1) void @retstage(i32 stage(1)) stage(2)
 
-; CHECK: Last stage of a function is not compatible with stages of its arguments
+; CHECK: Last stage of @laststage is not compatible with the stages of its arguments
 ; CHECK-NEXT: i32 (i32)* @laststage
 declare i32 @laststage(i32) stage(2)
 
-; CHECK: Last stage of a function is not compatible with stages of its arguments
+; CHECK: Last stage of @laststage1 is not compatible with the stages of its arguments
 ; CHECK-NEXT: i32 (i32)* @laststage1
 declare i32 @laststage1(i32 stage(2)) stage(1)
 
-; CHECK: Last stage of a function is not compatible with the stage of its return value
+; CHECK: Last stage of @laststage2 is not compatible with the stage of its return value
 ; CHECK-NEXT: i32 ()* @laststage2
 declare stage(2) i32 @laststage2() stage(1)
 
