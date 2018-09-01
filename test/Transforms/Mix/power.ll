@@ -4,13 +4,11 @@
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define i32 @power-iter(i32* %px, i32 %n)
-; CHECK-STAGE-LABEL: define i32 @power-iter()
-define i32 @power-iter(i32* %px, i32 %n) {
+; CHECK-LABEL: define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n)
+; CHECK-STAGE-LABEL: define i32 @power-iter(i32 %x)
+define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n) stage(1) {
 ; CHECK: entry:
 entry:
-  ; CHECK-STAGE: %x = load i32
-  %x = load i32, i32* %px
   ; CHECK: br {{.*}} %check-next
   br label %check-next
 
@@ -46,9 +44,8 @@ exit:
 
 ; CHECK-LABEL: define void @main()
 define void @main() {
-  %px = alloca i32
   %c = call i8* @LLVMContextCreate()
-  %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32*, i32)* @power-iter to i8*), i8* %c, i32* %px, i32 5)
+  %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32, i32)* @power-iter to i8*), i8* %c, i32 5)
   call void @LLVMDumpValue(i8* %f)
   call void @LLVMContextDispose(i8* %c)
   ret void

@@ -6,7 +6,7 @@
 
 ; CHECK-LABEL: define void @f(
 ; CHECK-STAGE-LABEL: define void @f()
-define void @f() {
+define void @f() stage(1) {
   ; CHECK-NEXT: ret void
   ; CHECK-STAGE-NEXT: ret void
   ret void

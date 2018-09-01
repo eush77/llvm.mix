@@ -4,9 +4,9 @@
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define i32 @f()
+; CHECK-LABEL: define stage(1) i32 @f()
 ; CHECK-STAGE-LABEL: define i32 @f()
-define i32 @f() {
+define stage(1) i32 @f() stage(1) {
 ; CHECK-STAGE-LABEL: entry:
 entry:
   ; CHECK-STAGE-NEXT: alloca

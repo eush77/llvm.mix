@@ -4,9 +4,9 @@
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define i32 @f(i32 %n, i32 stage(1) %x)
+; CHECK-LABEL: define stage(1) i32 @f(i32 %n, i32 stage(1) %x)
 ; CHECK-STAGE-LABEL: define i32 @f(i32 %x)
-define i32 @f(i32 %n, i32 stage(1) %x) {
+define stage(1) i32 @f(i32 %n, i32 stage(1) %x) stage(1) {
   ; CHECK-STAGE: %y = add i32 %x, 4
   %y = add i32 %x, %n
   ret i32 %y

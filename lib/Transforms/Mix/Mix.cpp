@@ -296,7 +296,12 @@ void Mix::collectDynamicBlocks(BasicBlock *BB,
 }
 
 void Mix::buildInstruction(Instruction *I) const {
-  switch (BTA->getStage(I)) {
+  // Divide instructions into static and dynamic and build each kind
+  // appropriately.
+  //
+  // For return instructions, `getStage' returns the stage of the return
+  // value, but the instruction itself must be staged dynamically.
+  switch (isa<ReturnInst>(I) ? MixedF->getLastStage() : BTA->getStage(I)) {
   case 0:
     if (auto *Phi = dyn_cast<PHINode>(I)) {
       SB->defineStatic(Phi, BTA->getPhiValueBindingTime(Phi) == 1);
