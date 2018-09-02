@@ -392,7 +392,9 @@ public:
   /// @brief Get stage of the return value.
   unsigned getReturnStage() const {
     assert(isStaged() && "Function is not staged");
-    return AttributeSets.getStage(AttributeList::ReturnIndex);
+    return getReturnType()->isVoidTy()
+               ? getLastStage()
+               : AttributeSets.getStage(AttributeList::ReturnIndex);
   }
 
   /// @brief Extract binding-time stage for a parameter.

@@ -64,11 +64,9 @@ bool BindingTimeAnalysis::isLastStage(const Instruction *I) const {
   switch (I->getOpcode()) {
   case Instruction::Br:
   case Instruction::IndirectBr:
+  case Instruction::Ret:
   case Instruction::Switch:
     return false;
-
-  case Instruction::Ret:
-    return I->getNumOperands() == 0;
 
   case Instruction::Alloca:
   case Instruction::Call:
@@ -148,8 +146,7 @@ void BindingTimeAnalysis::fixInstruction(const Instruction *I,
       enqueue(BB, MaxOperandStage, WorklistItem::PredTerminator, Term);
     }
 
-    if (isa<ReturnInst>(I) && I->getNumOperands() != 0 &&
-        F->getReturnStage() < MaxOperandStage) {
+    if (isa<ReturnInst>(I) && F->getReturnStage() < MaxOperandStage) {
       F->getContext().diagnose(DiagnosticInfoMix(
           DS_Error,
           "Inferred stage(" + Twine(MaxOperandStage) +
@@ -175,8 +172,6 @@ void BindingTimeAnalysis::initializeWorklist() {
       if (isLastStage(&I)) {
         enqueue(&I, F->getLastStage(), WorklistItem::LastStage);
       } else if (isa<ReturnInst>(I)) {
-        assert(I.getNumOperands() != 0 &&
-               "`ret void' must be in the last stage");
         enqueue(&I, F->getReturnStage(), WorklistItem::ReturnStage);
       } else {
         enqueue(&I, 0, WorklistItem::Default);
