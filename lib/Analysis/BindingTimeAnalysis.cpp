@@ -236,8 +236,6 @@ void BindingTimeAnalysis::fixTerminators() {
 // Compute a fixed point of binding-time rules.
 void BindingTimeAnalysis::fix() {
   do {
-    DEBUG(dbgs() << '\n');
-
     while (auto WI = popItem()) {
       unsigned IS = WI->getIncomingStage();
 
@@ -255,6 +253,8 @@ void BindingTimeAnalysis::fix() {
     }
 
     fixTerminators();
+
+    DEBUG(dbgs() << '\n');
   } while (!Worklist.empty());
 }
 
@@ -262,7 +262,7 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   if (!F.isStaged())
     return false;
 
-  DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n");
+  DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
   this->F = &F;
 
