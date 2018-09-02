@@ -1,7 +1,11 @@
 ; RUN: opt -S -mix %s -o - | FileCheck %s --implicit-check-not=define
-; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
+
+; NOTE: Using O1 here because the interpreter does not support constants of
+; type `half'.
+;
+; RUN: opt -S -mix -O1 %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
-; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
+; RUN: opt -S -mix -O1 %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
 ; CHECK-LABEL: define i1 @i1()

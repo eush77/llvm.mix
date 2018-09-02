@@ -40,6 +40,7 @@
 
 #include <cassert>
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -54,6 +55,8 @@ template <typename IRBuilder> class StagedIRBuilder {
 public:
   StagedIRBuilder(IRBuilder &Builder, Value *StagedContext)
       : B(Builder), StagedContext(StagedContext) {}
+
+  IRBuilder &getBuilder() { return B; }
 
   // Interface to particular LLVM API calls.
   Instruction *createModule(const Twine &ModuleId, const Twine &InstName = "");
@@ -78,6 +81,9 @@ public:
   // block means creating an empty basic block in the staged function.
   Instruction *stage(Value *V);
   Instruction *stage(Argument *A, unsigned ArgNo);
+  Instruction *stage(std::unique_ptr<Instruction, ValueDeleter> &&I) {
+    return stage(I.get());
+  }
 
   // Define static value in the generated function if it is defined elsewhere.
   Value *defineStatic(Value *V);
@@ -604,13 +610,8 @@ BasicBlock *StagedIRBuilder<IRBuilder>::defineStatic(BasicBlock *BB) {
   if (SBB)
     return SBB;
 
-  if (BB == &BB->getParent()->getEntryBlock()) {
-    SBB = &B.GetInsertBlock()->getParent()->getEntryBlock();
-  } else {
-    SBB = BasicBlock::Create(B.getContext(), BB->getName(),
-                             B.GetInsertBlock()->getParent());
-  }
-
+  SBB = BasicBlock::Create(B.getContext(), BB->getName(),
+                           B.GetInsertBlock()->getParent());
   return StaticBasicBlocks[BB] = SBB;
 }
 
