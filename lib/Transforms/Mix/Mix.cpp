@@ -170,9 +170,10 @@ class MixFunction {
 public:
   MixFunction(StagedIRBuilder<IRBuilder<>> &SB, Function *F,
               Instruction *StagedModule, iterator_range<User::op_iterator> Args,
-              const BindingTimeAnalysis &BTA)
+              const BindingTimeAnalysis &BTA, BasicBlock *InsertBefore)
       : SB(SB), Parent(StagedModule->getFunction()), F(F),
-        StagedModule(StagedModule), Args(Args), BTA(BTA) {
+        StagedModule(StagedModule), Args(Args), BTA(BTA),
+        InsertBefore(InsertBefore) {
     buildFunction();
   }
 
@@ -202,15 +203,17 @@ private:
   Instruction *StagedF = nullptr;
   iterator_range<User::op_iterator> Args;
   const BindingTimeAnalysis &BTA;
+  BasicBlock *InsertBefore;
 };
 
 } // namespace
 
 void MixFunction::buildFunction() {
-  Entry = BasicBlock::Create(Parent->getContext(),
-                             Twine(F->getName()) + ".entry", Parent);
+  Entry =
+      BasicBlock::Create(Parent->getContext(), Twine(F->getName()) + ".entry",
+                         Parent, InsertBefore);
   Exit = BasicBlock::Create(Parent->getContext(), Twine(F->getName()) + ".exit",
-                            Parent);
+                            Parent, InsertBefore);
 
   SB.getBuilder().SetInsertPoint(Entry);
 
@@ -275,6 +278,7 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
         BB->printAsOperand(dbgs(), false); dbgs() << ":\n");
 
   BasicBlock *Parent = SB.defineStatic(BB);
+  Parent->moveBefore(Exit);
   SB.getBuilder().SetInsertPoint(Parent);
 
   // Build dynamic terminator in the dynamic predecessor block.
@@ -353,7 +357,8 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
   BasicBlock *Tail = Head->splitBasicBlock(&I, Head->getName());
 
   MixFunction Mix(SB, MixedF, StagedModule,
-                  make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA);
+                  make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA,
+                  Tail);
   cast<BranchInst>(Head->getTerminator())->setSuccessor(0, Mix.getEntry());
   BranchInst::Create(Tail, Mix.getExit());
 
