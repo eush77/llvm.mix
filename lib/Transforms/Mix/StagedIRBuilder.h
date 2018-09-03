@@ -56,7 +56,21 @@ public:
   StagedIRBuilder(IRBuilder &Builder, Value *StagedContext)
       : B(Builder), StagedContext(StagedContext) {}
 
-  IRBuilder &getBuilder() { return B; }
+  StagedIRBuilder(const StagedIRBuilder &Other) = delete;
+  StagedIRBuilder(StagedIRBuilder &&Other) = default;
+
+  // Create new builder with same parameters but no state.
+  StagedIRBuilder createNew() const {
+    StagedIRBuilder SB(B, StagedContext);
+    SB.StagedBuilder = StagedBuilder;
+    SB.StagedModule = StagedModule;
+    return SB;
+  }
+
+  IRBuilder &getBuilder() const { return B; }
+  Instruction *getStagedContext() const { return StagedContext; }
+  Instruction *getStagedBuilder() const { return StagedBuilder; }
+  Instruction *getStagedModule() const { return StagedModule; }
 
   // Interface to particular LLVM API calls.
   Instruction *createModule(const Twine &ModuleId, const Twine &InstName = "");
@@ -67,8 +81,7 @@ public:
                               const Twine &InstName = "");
   Instruction *setLinkage(Value *Global, GlobalValue::LinkageTypes Linkage);
   Instruction *setName(Instruction *I, StringRef Name);
-  Instruction *createBuilder(Instruction *StagedFunction,
-                             const Twine &InstName = "");
+  Instruction *createBuilder(const Twine &InstName = "");
   Instruction *positionBuilderAtEnd(Instruction *StagedBasicBlock,
                                     const Twine &InstName = "");
   Instruction *disposeBuilder(const Twine &InstName = "");
@@ -154,6 +167,7 @@ private:
   IRBuilder &B;
   Value *StagedContext;
   Instruction *StagedBuilder = nullptr;
+  Instruction *StagedModule = nullptr;
   Instruction *StagedFunction = nullptr;
   DenseMap<Type *, Instruction *> StagedTypes;
   DenseMap<Value *, Instruction *> StagedValues;
@@ -167,14 +181,19 @@ private:
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::createModule(const Twine &ModuleId,
                                                       const Twine &InstName) {
-  return B.CreateCall(getModuleCreateWithNameInContextFn(),
-                      {stage(ModuleId.str()), StagedContext}, InstName);
+  assert(!StagedModule && "Staged module is already created");
+
+  return StagedModule =
+             B.CreateCall(getModuleCreateWithNameInContextFn(),
+                          {stage(ModuleId.str()), StagedContext}, InstName);
 }
 
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     FunctionType *Type, GlobalValue::LinkageTypes Linkage, const Twine &Name,
     Instruction *StagedModule, const Twine &InstName) {
+  assert(!StagedFunction && "Staged function is already created");
+
   auto *F =
       B.CreateCall(getAddFunctionFn(),
                    {StagedModule, stage(Name.str()), stage(Type)}, InstName);
@@ -183,6 +202,7 @@ Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     setLinkage(F, Linkage);
   }
 
+  StagedFunction = F;
   return F;
 }
 
@@ -250,15 +270,13 @@ Instruction *StagedIRBuilder<IRBuilder>::setName(Instruction *I,
 }
 
 template <typename IRBuilder>
-Instruction *StagedIRBuilder<IRBuilder>::createBuilder(Instruction *SF,
-                                                       const Twine &InstName) {
+Instruction *StagedIRBuilder<IRBuilder>::createBuilder(const Twine &InstName) {
   assert(!StagedBuilder && "Staged IRBuilder is already created");
 
   auto *SB =
       B.CreateCall(getCreateBuilderInContextFn(), StagedContext, InstName);
 
   StagedBuilder = SB;
-  StagedFunction = SF;
   return SB;
 }
 

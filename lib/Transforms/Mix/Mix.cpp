@@ -49,6 +49,7 @@
 #include <cassert>
 #include <iterator>
 #include <memory>
+#include <utility>
 #include <vector>
 
 using namespace llvm;
@@ -168,12 +169,12 @@ TerminatorInst *traverseDynamicBlocks(BasicBlock *Start, OutputIt Out,
 // with static arguments.
 class MixFunction {
 public:
-  MixFunction(StagedIRBuilder<IRBuilder<>> &SB, Function *F,
-              Instruction *StagedModule, iterator_range<User::op_iterator> Args,
-              const BindingTimeAnalysis &BTA, BasicBlock *InsertBefore)
-      : SB(SB), Parent(StagedModule->getFunction()), F(F),
-        StagedModule(StagedModule), Args(Args), BTA(BTA),
-        InsertBefore(InsertBefore) {
+  MixFunction(StagedIRBuilder<IRBuilder<>> &&SB, Function *F,
+              iterator_range<User::op_iterator> Args,
+              const BindingTimeAnalysis &BTA,
+              BasicBlock *InsertBefore = nullptr)
+      : SB(std::move(SB)), Parent(SB.getStagedBuilder()->getFunction()), F(F),
+        Args(Args), BTA(BTA), InsertBefore(InsertBefore) {
     buildFunction();
   }
 
@@ -196,10 +197,9 @@ private:
 
   PHINode *StaticReturn = nullptr;
 
-  StagedIRBuilder<IRBuilder<>> &SB;
+  StagedIRBuilder<IRBuilder<>> SB;
   Function *Parent;
   Function *F;
-  Instruction *StagedModule;
   Instruction *StagedF = nullptr;
   iterator_range<User::op_iterator> Args;
   const BindingTimeAnalysis &BTA;
@@ -230,9 +230,8 @@ void MixFunction::buildFunction() {
 
   StagedF = SB.createFunction(
       FunctionType::get(F->getReturnType(), DynamicArgTypes, false),
-      GlobalValue::ExternalLinkage, F->getName(), StagedModule, F->getName());
-
-  SB.createBuilder(StagedF, Twine(F->getName()) + ".builder");
+      GlobalValue::ExternalLinkage, F->getName(), SB.getStagedModule(),
+      F->getName());
 
   // Stage function arguments.
   {
@@ -349,14 +348,14 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
                       I.getArgOperand(1)->getName());
 
   StagedIRBuilder<IRBuilder<>> SB(B, StagedContext);
-  Instruction *StagedModule =
-      SB.createModule(Twine(MixedF->getName(), ".module"), "module");
+  SB.createModule(Twine(MixedF->getName(), ".module"), "module");
+  SB.createBuilder("builder");
 
   // Split the call basic block.
   BasicBlock *Head = I.getParent();
   BasicBlock *Tail = Head->splitBasicBlock(&I, Head->getName());
 
-  MixFunction Mix(SB, MixedF, StagedModule,
+  MixFunction Mix(SB.createNew(), MixedF,
                   make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA,
                   Tail);
   cast<BranchInst>(Head->getTerminator())->setSuccessor(0, Mix.getEntry());
