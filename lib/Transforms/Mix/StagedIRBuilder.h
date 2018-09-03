@@ -505,6 +505,26 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       break;
     }
 
+    case Instruction::Call: {
+      auto *Call = cast<CallInst>(Inst);
+
+      Value *Args = B.CreateAlloca(getValuePtrTy(),
+                                   B.getInt32(Call->getNumArgOperands()));
+
+      for (unsigned ArgNum = 0; ArgNum < Call->getNumArgOperands(); ++ArgNum) {
+        B.CreateStore(stage(Call->getArgOperand(ArgNum)),
+                      B.CreateGEP(Args, B.getInt32(ArgNum)));
+      }
+
+      pushArg(getValuePtrTy(), stage(Call->getCalledValue()));
+      pushArg(getValuePtrTy()->getPointerTo(), Args);
+      pushArg(getUnsignedIntTy(),
+              ConstantInt::get(getUnsignedIntTy(), Call->getNumArgOperands()));
+      pushArg(getCharPtrTy(), stage(Call->getName()));
+      setBuilderName("Call");
+      break;
+    }
+
     case Instruction::ICmp: {
       LLVMIntPredicate CAPIIntPredicate = LLVMGetICmpPredicate(wrap(Inst));
 
