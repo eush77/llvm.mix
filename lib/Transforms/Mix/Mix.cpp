@@ -169,12 +169,12 @@ TerminatorInst *traverseDynamicBlocks(BasicBlock *Start, OutputIt Out,
 // with static arguments.
 class MixFunction {
 public:
-  MixFunction(StagedIRBuilder<IRBuilder<>> &&SB, Function *F,
+  MixFunction(IRBuilder<> &B, StagedModule &SM, Function *F,
               iterator_range<User::op_iterator> Args,
               const BindingTimeAnalysis &BTA,
               BasicBlock *InsertBefore = nullptr)
-      : SB(std::move(SB)), Parent(SB.getStagedBuilder()->getFunction()), F(F),
-        Args(Args), BTA(BTA), InsertBefore(InsertBefore) {
+      : SB(B, SM), Parent(SM.getParent()), F(F), Args(Args), BTA(BTA),
+        InsertBefore(InsertBefore) {
     buildFunction();
   }
 
@@ -230,8 +230,7 @@ void MixFunction::buildFunction() {
 
   StagedF = SB.createFunction(
       FunctionType::get(F->getReturnType(), DynamicArgTypes, false),
-      GlobalValue::ExternalLinkage, F->getName(), SB.getStagedModule(),
-      F->getName());
+      GlobalValue::ExternalLinkage, F->getName(), F->getName());
 
   // Stage function arguments.
   {
@@ -343,19 +342,17 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
                << I << "\n\n");
 
   IRBuilder<> B(&I);
-  Value *StagedContext =
-      B.CreateBitCast(I.getArgOperand(1), getContextPtrTy(I.getContext()),
-                      I.getArgOperand(1)->getName());
-
-  StagedIRBuilder<IRBuilder<>> SB(B, StagedContext);
-  SB.createModule(Twine(MixedF->getName(), ".module"), "module");
-  SB.createBuilder("builder");
+  auto SM = StagedModule::build(B,
+                                B.CreateBitCast(I.getArgOperand(1),
+                                                getContextPtrTy(I.getContext()),
+                                                I.getArgOperand(1)->getName()),
+                                Twine(MixedF->getName(), ".module"));
 
   // Split the call basic block.
   BasicBlock *Head = I.getParent();
   BasicBlock *Tail = Head->splitBasicBlock(&I, Head->getName());
 
-  MixFunction Mix(SB.createNew(), MixedF,
+  MixFunction Mix(B, SM, MixedF,
                   make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA,
                   Tail);
   cast<BranchInst>(Head->getTerminator())->setSuccessor(0, Mix.getEntry());
