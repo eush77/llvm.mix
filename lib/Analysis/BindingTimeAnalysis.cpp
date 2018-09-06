@@ -27,6 +27,7 @@
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -270,9 +271,11 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   MST.emplace(F.getParent());
   MST->incorporateFunction(F);
 
-  // Reset previous state.
+  // Reset previous state for this function.
   WorklistID = 0;
-  StageMap.clear();
+  std::for_each(F.begin(), F.end(), [&](auto &V) { StageMap.erase(&V); });
+  std::for_each(inst_begin(F), inst_end(F),
+                [&](auto &V) { StageMap.erase(&V); });
 
   // Default to stage(0) in `getStage'.
   SaveAndRestore<bool> SavedDTS0(DefaultToStage0, true);
@@ -288,7 +291,6 @@ bool BindingTimeAnalysis::isAnalyzed(const Value *V) const {
 }
 
 unsigned BindingTimeAnalysis::getStage(const Value *V) const {
-  assert(F->isStaged() && "Function is not staged");
   assert((DefaultToStage0 || isAnalyzed(V)) && "Value has not been analyzed");
 
   if (isa<Constant>(V))
@@ -298,8 +300,6 @@ unsigned BindingTimeAnalysis::getStage(const Value *V) const {
 }
 
 unsigned BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
-  assert(F->isStaged() && "Function is not staged");
-
   return std::accumulate(Phi->op_begin(), Phi->op_end(), 0,
                          [this](unsigned Stage, const Value *V) {
                            return std::max(Stage, getStage(V));
