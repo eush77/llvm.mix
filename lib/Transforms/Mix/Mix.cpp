@@ -170,12 +170,12 @@ TerminatorInst *traverseDynamicBlocks(BasicBlock *Start, OutputIt Out,
 class MixFunction {
 public:
   MixFunction(IRBuilder<> &B, StagedModule &SM, Function *F,
+              GlobalValue::LinkageTypes Linkage,
               iterator_range<User::op_iterator> Args,
               const BindingTimeAnalysis &BTA,
               BasicBlock *InsertBefore = nullptr)
-      : SB(B, SM), Parent(SM.getParent()), F(F), Args(Args), BTA(BTA),
-        InsertBefore(InsertBefore) {
-    buildFunction();
+      : SB(B, SM), F(F), BTA(BTA) {
+    buildFunction(Linkage, Args, InsertBefore);
   }
 
   Instruction *getFunction() { return SB.getFunction(); }
@@ -187,7 +187,9 @@ public:
   Value *getStaticReturnValue() { return StaticReturn; }
 
 private:
-  void buildFunction();
+  void buildFunction(GlobalValue::LinkageTypes Linkage,
+                     iterator_range<User::op_iterator> Args,
+                     BasicBlock *InsertBefore);
   void buildBasicBlock(BasicBlock *BB);
   Instruction *buildInstruction(Instruction *I);
 
@@ -198,21 +200,21 @@ private:
   PHINode *StaticReturn = nullptr;
 
   StagedIRBuilder<IRBuilder<>> SB;
-  Function *Parent;
   Function *F;
-  iterator_range<User::op_iterator> Args;
   const BindingTimeAnalysis &BTA;
-  BasicBlock *InsertBefore;
 };
 
 } // namespace
 
-void MixFunction::buildFunction() {
-  Entry =
-      BasicBlock::Create(Parent->getContext(), Twine(F->getName()) + ".entry",
-                         Parent, InsertBefore);
-  Exit = BasicBlock::Create(Parent->getContext(), Twine(F->getName()) + ".exit",
-                            Parent, InsertBefore);
+void MixFunction::buildFunction(GlobalValue::LinkageTypes Linkage,
+                                iterator_range<User::op_iterator> Args,
+                                BasicBlock *InsertBefore) {
+  Entry = BasicBlock::Create(InsertBefore->getContext(),
+                             Twine(F->getName()) + ".entry",
+                             SB.getModule().getParent(), InsertBefore);
+  Exit = BasicBlock::Create(InsertBefore->getContext(),
+                            Twine(F->getName()) + ".exit",
+                            SB.getModule().getParent(), InsertBefore);
 
   SB.getBuilder().SetInsertPoint(Entry);
 
@@ -228,8 +230,8 @@ void MixFunction::buildFunction() {
   }
 
   SB.setFunction(SB.createFunction(
-      FunctionType::get(F->getReturnType(), DynamicArgTypes, false),
-      GlobalValue::ExternalLinkage, F->getName(), F->getName()));
+      FunctionType::get(F->getReturnType(), DynamicArgTypes, false), Linkage,
+      F->getName(), F->getName()));
 
   // Stage function arguments.
   {
@@ -369,7 +371,7 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
   BasicBlock *Head = I.getParent();
   BasicBlock *Tail = Head->splitBasicBlock(&I, Head->getName());
 
-  MixFunction Mix(B, SM, MixedF,
+  MixFunction Mix(B, SM, MixedF, GlobalValue::ExternalLinkage,
                   make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA,
                   Tail);
   cast<BranchInst>(Head->getTerminator())->setSuccessor(0, Mix.getEntry());
