@@ -178,7 +178,7 @@ public:
     buildFunction();
   }
 
-  Instruction *getFunction() { return StagedF; }
+  Instruction *getFunction() { return SB.getFunction(); }
 
   // Generated code has one entry block and one exit block.
   BasicBlock *getEntry() const { return Entry; }
@@ -189,7 +189,7 @@ public:
 private:
   void buildFunction();
   void buildBasicBlock(BasicBlock *BB);
-  void buildInstruction(Instruction *I);
+  Instruction *buildInstruction(Instruction *I);
 
   // Entry and exit blocks of the generated builder.
   BasicBlock *Entry = nullptr;
@@ -200,7 +200,6 @@ private:
   StagedIRBuilder<IRBuilder<>> SB;
   Function *Parent;
   Function *F;
-  Instruction *StagedF = nullptr;
   iterator_range<User::op_iterator> Args;
   const BindingTimeAnalysis &BTA;
   BasicBlock *InsertBefore;
@@ -228,9 +227,9 @@ void MixFunction::buildFunction() {
     }
   }
 
-  StagedF = SB.createFunction(
+  SB.setFunction(SB.createFunction(
       FunctionType::get(F->getReturnType(), DynamicArgTypes, false),
-      GlobalValue::ExternalLinkage, F->getName(), F->getName());
+      GlobalValue::ExternalLinkage, F->getName(), F->getName()));
 
   // Stage function arguments.
   {
@@ -295,6 +294,25 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
     SB.positionBuilderAtEnd(SB.stage(BB));
 
     for (auto &I : *BB) {
+      if (auto *Call = dyn_cast<CallInst>(&I)) {
+        Function *Callee = Call->getCalledFunction();
+        assert((Callee || BTA.getStage(Call) == F->getLastStage()) &&
+               "Indirect calls cannot have static return values");
+
+        if (Callee) {
+          if (Callee->isStaged()) {
+            llvm_unreachable("Unsupported");
+          } else if (Callee->hasExternalLinkage()) {
+            Instruction *StagedCallee = SB.createFunction(
+                Callee->getFunctionType(), Callee->getLinkage(),
+                Callee->getName(), Callee->getName());
+
+            SB.setCalledValue(buildInstruction(Call), StagedCallee);
+            continue;
+          }
+        }
+      }
+
       buildInstruction(&I);
     }
   }
@@ -316,17 +334,16 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
   SB.getBuilder().CreateBr(Exit);
 }
 
-void MixFunction::buildInstruction(Instruction *I) {
+Instruction *MixFunction::buildInstruction(Instruction *I) {
   if (BTA.getStage(I) == F->getLastStage() || isa<ReturnInst>(I)) {
-    SB.stage(I);
-    return;
+    return SB.stage(I);
   }
 
   if (auto *Phi = dyn_cast<PHINode>(I)) {
     SB.defineStatic(Phi, BTA.getPhiValueBindingTime(Phi) == F->getLastStage());
   }
 
-  SB.stageStatic(I);
+  return SB.stageStatic(I);
 }
 
 Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {

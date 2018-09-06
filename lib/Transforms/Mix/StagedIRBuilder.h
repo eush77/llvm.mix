@@ -142,7 +142,10 @@ public:
   StagedIRBuilder(StagedIRBuilder &&Other) = default;
 
   IRBuilder &getBuilder() const { return B; }
-  StagedModule &getStagedModule() const { return SM; }
+  StagedModule &getModule() const { return SM; }
+
+  void setFunction(Instruction *F) { SF = F; }
+  Instruction *getFunction() const { return SF; }
 
   // Interface to particular LLVM API calls.
   Instruction *createFunction(FunctionType *Type,
@@ -185,6 +188,9 @@ public:
                                {B.getInt32(0), B.getInt32(0)}, VarName);
   }
 
+  // Change target of a dynamic call.
+  void setCalledValue(Instruction *Call, Instruction *V);
+
 private:
   Instruction *stageBasicBlock(BasicBlock *Block);
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
@@ -198,7 +204,7 @@ private:
 
   IRBuilder &B;
   StagedModule &SM;
-  Instruction *StagedFunction = nullptr;
+  Instruction *SF = nullptr;
   DenseMap<Value *, Instruction *> StagedValues;
   std::unordered_multimap<Value *, std::function<void(Instruction *)>>
       StageCallbacks;
@@ -229,8 +235,6 @@ template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     FunctionType *Type, GlobalValue::LinkageTypes Linkage, const Twine &Name,
     const Twine &InstName) {
-  assert(!StagedFunction && "Staged function is already created");
-
   auto *F = B.CreateCall(SM.getAddFunctionFn(),
                          {SM.Module, stage(Name.str()), stage(Type)}, InstName);
 
@@ -238,7 +242,6 @@ Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     setLinkage(F, Linkage);
   }
 
-  StagedFunction = F;
   return F;
 }
 
@@ -435,7 +438,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Argument *Arg, unsigned ArgNo) {
 
   Instruction *StagedArg = B.CreateCall(
       SM.getGetParamFn(),
-      {StagedFunction, ConstantInt::get(SM.getUnsignedIntTy(), ArgNo)},
+      {getFunction(), ConstantInt::get(SM.getUnsignedIntTy(), ArgNo)},
       Arg->getName());
 
   addStagedValue(Arg, StagedArg);
@@ -445,7 +448,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Argument *Arg, unsigned ArgNo) {
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageBasicBlock(BasicBlock *Block) {
   return B.CreateCall(SM.getAppendBasicBlockInContextFn(),
-                      {SM.Context, StagedFunction, stage(Block->getName())},
+                      {SM.Context, getFunction(), stage(Block->getName())},
                       Block->getName());
 }
 
@@ -890,6 +893,16 @@ void StagedIRBuilder<IRBuilder>::whenStaged(
   } else {
     StageCallbacks.insert(std::make_pair(V, Callback));
   }
+}
+
+template <typename IRBuilder>
+void StagedIRBuilder<IRBuilder>::setCalledValue(Instruction *I,
+                                                Instruction *V) {
+  auto *Call = cast<CallInst>(I);
+  assert(Call->getCalledFunction()->getName() == "LLVMBuildCall" &&
+         "Not a dynamic call");
+
+  Call->setArgOperand(1, V);
 }
 
 } // namespace mix
