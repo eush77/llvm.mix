@@ -154,8 +154,12 @@ public:
   IRBuilder &getBuilder() const { return B; }
   StagedModule &getModule() const { return SM; }
 
-  void setFunction(Instruction *F) { SF = F; }
+  FunctionType *getFunctionType() const { return FTy; }
   Instruction *getFunction() const { return SF; }
+  void setFunction(FunctionType *Ty, Instruction *F) {
+    FTy = Ty;
+    SF = F;
+  }
 
   // Interface to particular LLVM API calls.
   Instruction *createFunction(FunctionType *Type,
@@ -178,6 +182,8 @@ public:
   Instruction *stage(std::unique_ptr<Instruction, ValueDeleter> &&I) {
     return stage(I.get());
   }
+
+  void setStagedValue(Value *V, Instruction *StagedV);
 
   // Define static value in the generated function if it is defined elsewhere.
   Value *defineStatic(Value *V);
@@ -205,14 +211,13 @@ private:
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
 
-  void addStagedValue(Value *V, Instruction *StagedV);
-
   // Register a callback to be called when the value is staged. If the value
   // has already been staged, call it immediately.
   void whenStaged(Value *V, std::function<void(Instruction *)> Callback);
 
   IRBuilder &B;
   StagedModule &SM;
+  FunctionType *FTy = nullptr;
   Instruction *SF = nullptr;
   DenseMap<Value *, Instruction *> StagedValues;
   std::unordered_multimap<Value *, std::function<void(Instruction *)>>
@@ -454,7 +459,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Argument *Arg, unsigned ArgNo) {
       {getFunction(), ConstantInt::get(SM.getUnsignedIntTy(), ArgNo)},
       Arg->getName());
 
-  addStagedValue(Arg, StagedArg);
+  setStagedValue(Arg, StagedArg);
   return StagedArg;
 }
 
@@ -644,6 +649,9 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
 
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
+  if (isa<Constant>(V))
+    return stageStatic(V);
+
   Instruction *StagedV = StagedValues.lookup(V);
 
   if (StagedV)
@@ -651,8 +659,6 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
 
   if (auto *Block = dyn_cast<BasicBlock>(V)) {
     StagedV = stageBasicBlock(Block);
-  } else if (auto *Const = dyn_cast<Constant>(V)) {
-    StagedV = stageStatic(Const);
   } else if (auto *Inst = dyn_cast<Instruction>(V)) {
     StagedV = stageInstruction(Inst);
 
@@ -662,7 +668,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
   }
 
   assert(StagedV && "Unsupported value kind");
-  addStagedValue(V, StagedV);
+  setStagedValue(V, StagedV);
   return StagedV;
 }
 
@@ -801,7 +807,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
   Value *StaticV = defineStatic(V);
 
   if (auto *StaticPhi = dyn_cast<PHINode>(StaticV)) {
-    addStagedValue(V, StaticPhi);
+    setStagedValue(V, StaticPhi);
     return StaticPhi;
   }
 
@@ -883,12 +889,15 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
 
   assert((StagedV || StaticV->getType()->isVoidTy()) &&
          "Unsupported static value");
-  addStagedValue(V, StagedV);
+  setStagedValue(V, StagedV);
   return StagedV;
 }
 
 template <typename IRBuilder>
-void StagedIRBuilder<IRBuilder>::addStagedValue(Value *V, Instruction *StagedV) {
+void StagedIRBuilder<IRBuilder>::setStagedValue(Value *V,
+                                                Instruction *StagedV) {
+  assert(!StagedValues.count(V) && "Value is already staged");
+
   // Call stage callbacks for the value.
   for (auto &SCPair: make_range(StageCallbacks.equal_range(V))) {
     SCPair.second(StagedV);

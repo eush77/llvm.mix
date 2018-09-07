@@ -7,17 +7,21 @@
 ; CHECK-LABEL: define stage(1) i32 @g(i32 %x)
 ; CHECK-STAGE-LABEL: define i32 @g()
 define stage(1) i32 @g(i32 %x) stage(1) {
-  ; CHECK-STAGE-NEXT: %y = call i32 @f(i32 4)
-  %y = call i32 @f(i32 %x)
-  ; CHECK-STAGE-NEXT: %z = call i32 inttoptr (i64 {{[0-9]+}} to i32 (i32)*)(i32 %y)
-  %z = call i32 @i(i32 %y)
-  ; CHECK-STAGE-NEXT: ret i32 %z
-  ret i32 %z
+  ; CHECK-STAGE-NEXT: %t0 = call i32 @e(i32 4)
+  %t0 = call i32 @e(i32 %x)
+  ; CHECK-STAGE-NEXT: %t1 = call i32 inttoptr (i64 {{[0-9]+}} to i32 (i32)*)(i32 %t0)
+  %t1 = call i32 @i(i32 %t0)
+  ; CHECK-STAGE: %t2 = call i32 @f(i32 %t1)
+  %t2 = call i32 @f(i32 %t1, i32 4)
+  ; CHECK-STAGE: %t3 = call i32 @f.1(i32 %t2)
+  %t3 = call i32 @f(i32 %t2, i32 6)
+  ; CHECK-STAGE: ret i32 %t3
+  ret i32 %t3
 }
 
-; CHECK-LABEL: define i32 @f(i32 %x)
-; CHECK-STAGE-LABEL: declare i32 @f(i32)
-define i32 @f(i32 %x) {
+; CHECK-LABEL: define i32 @e(i32 %x)
+; CHECK-STAGE-LABEL: declare i32 @e(i32)
+define i32 @e(i32 %x) {
   %y = add i32 %x, 1
   ret i32 %y
 }
@@ -27,6 +31,19 @@ define internal i32 @i(i32 %x) {
   %y = add i32 %x, 1
   ret i32 %y
 }
+
+; CHECK-LABEL: define stage(1) i32 @f(i32 stage(1) %x, i32 %n)
+; CHECK-STAGE-LABEL: define internal i32 @f(i32 %x)
+define stage(1) i32 @f(i32 stage(1) %x, i32 %n) stage(1) {
+  ; CHECK-STAGE-NEXT: %y = add i32 %x, 4
+  %y = add i32 %x, %n
+  ; CHECK-STAGE-NEXT: ret i32 %y
+  ret i32 %y
+}
+
+; CHECK-STAGE-LABEL: define internal i32 @f.1(i32 %x)
+; CHECK-STAGE-NEXT: %y = add i32 %x, 6
+; CHECK-STAGE-NEXT: ret i32 %y
 
 ; CHECK-LABEL: define void @main()
 define void @main() {

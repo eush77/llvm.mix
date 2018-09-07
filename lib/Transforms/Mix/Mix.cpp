@@ -20,6 +20,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/BindingTimeAnalysis.h"
+#include "llvm/Analysis/CallGraph.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -36,7 +37,6 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Pass.h"
 #include "llvm/PassAnalysisSupport.h"
@@ -67,12 +67,15 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<BindingTimeAnalysis>();
+    AU.addRequired<CallGraphWrapperPass>();
   }
 
   bool runOnModule(Module &M) override;
 
 private:
   Value *visitMixIRIntrinsicInst(IntrinsicInst &I);
+
+  const CallGraph *CG = nullptr;
 };
 
 char Mix::ID;
@@ -81,6 +84,7 @@ char Mix::ID;
 
 INITIALIZE_PASS_BEGIN(Mix, "mix", "Multi-Stage Compilation", false, false)
 INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
+INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass)
 INITIALIZE_PASS_END(Mix, "mix", "Multi-Stage Compilation", false, false)
 
 void llvm::addMixPass(PassManagerBuilder &PMB) {
@@ -92,6 +96,8 @@ void llvm::addMixPass(PassManagerBuilder &PMB) {
 
 bool Mix::runOnModule(Module &M) {
   DEBUG(dbgs() << "---- Mix : " << M.getName() << " ----\n");
+
+  CG = &getAnalysis<CallGraphWrapperPass>().getCallGraph();
 
   bool MadeChange = false;
 
@@ -169,15 +175,16 @@ TerminatorInst *traverseDynamicBlocks(BasicBlock *Start, OutputIt Out,
 // with static arguments.
 class MixFunction {
 public:
+  template <typename ArgsT>
   MixFunction(IRBuilder<> &B, StagedModule &SM, Function *F,
-              GlobalValue::LinkageTypes Linkage,
-              iterator_range<User::op_iterator> Args,
+              GlobalValue::LinkageTypes Linkage, ArgsT Args,
               const BindingTimeAnalysis &BTA,
               BasicBlock *InsertBefore = nullptr)
       : SB(B, SM), F(F), BTA(BTA) {
     buildFunction(Linkage, Args, InsertBefore);
   }
 
+  FunctionType *getFunctionType() { return SB.getFunctionType(); }
   Instruction *getFunction() { return SB.getFunction(); }
 
   // Generated code has one entry block and one exit block.
@@ -187,11 +194,11 @@ public:
   Value *getStaticReturnValue() { return StaticReturn; }
 
 private:
-  void buildFunction(GlobalValue::LinkageTypes Linkage,
-                     iterator_range<User::op_iterator> Args,
+  template <typename ArgsT>
+  void buildFunction(GlobalValue::LinkageTypes Linkage, ArgsT Args,
                      BasicBlock *InsertBefore);
   void buildBasicBlock(BasicBlock *BB);
-  Instruction *buildInstruction(Instruction *I);
+  void buildInstruction(Instruction *I);
 
   // Entry and exit blocks of the generated builder.
   BasicBlock *Entry = nullptr;
@@ -206,8 +213,8 @@ private:
 
 } // namespace
 
-void MixFunction::buildFunction(GlobalValue::LinkageTypes Linkage,
-                                iterator_range<User::op_iterator> Args,
+template <typename ArgsT>
+void MixFunction::buildFunction(GlobalValue::LinkageTypes Linkage, ArgsT Args,
                                 BasicBlock *InsertBefore) {
   Entry = BasicBlock::Create(InsertBefore->getContext(),
                              Twine(F->getName()) + ".entry",
@@ -229,9 +236,10 @@ void MixFunction::buildFunction(GlobalValue::LinkageTypes Linkage,
     }
   }
 
-  SB.setFunction(SB.createFunction(
-      FunctionType::get(F->getReturnType(), DynamicArgTypes, false), Linkage,
-      F->getName(), F->getName()));
+  auto *FTy = FunctionType::get(F->getReturnType(), DynamicArgTypes, false);
+
+  SB.setFunction(FTy,
+                 SB.createFunction(FTy, Linkage, F->getName(), F->getName()));
 
   // Stage function arguments.
   {
@@ -303,13 +311,49 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
 
         if (Callee) {
           if (Callee->isStaged()) {
-            llvm_unreachable("Unsupported");
+            SmallVector<Value *, 4> StaticArgs;
+            SmallVector<Value *, 4> DynamicArgs;
+
+            // Split arguments by binding time.
+            for (unsigned ArgNo = 0; ArgNo < Call->getNumArgOperands();
+                 ++ArgNo) {
+              auto &ArgVec = (Callee->getParamStage(ArgNo) < F->getLastStage())
+                                 ? StaticArgs
+                                 : DynamicArgs;
+
+              ArgVec.push_back(Call->getArgOperand(ArgNo));
+            }
+
+            // Split the call basic block.
+            auto *Tail =
+                BasicBlock::Create(Parent->getContext(), Parent->getName(),
+                                   Parent->getParent(), Parent->getNextNode());
+
+            MixFunction Mix(SB.getBuilder(), SB.getModule(), Callee,
+                            GlobalValue::InternalLinkage, StaticArgs, BTA,
+                            Tail);
+            BranchInst::Create(Mix.getEntry(), Parent);
+            BranchInst::Create(Tail, Mix.getExit());
+
+            Parent = Tail;
+            SB.getBuilder().SetInsertPoint(Parent);
+            SB.positionBuilderAtEnd(SB.stage(BB));
+
+            // Create a dynamic call.
+            Instruction *StagedCall =
+                SB.stage(std::unique_ptr<Instruction, ValueDeleter>(
+                    CallInst::Create(ConstantPointerNull::get(
+                                         Mix.getFunctionType()->getPointerTo()),
+                                     DynamicArgs, Call->getName())));
+            SB.setCalledValue(StagedCall, Mix.getFunction());
+            SB.setStagedValue(Call, StagedCall);
+            continue;
           } else if (Callee->hasExternalLinkage()) {
             Instruction *StagedCallee = SB.createFunction(
                 Callee->getFunctionType(), Callee->getLinkage(),
                 Callee->getName(), Callee->getName());
 
-            SB.setCalledValue(buildInstruction(Call), StagedCallee);
+            SB.setCalledValue(SB.stage(Call), StagedCallee);
             continue;
           }
         }
@@ -335,23 +379,37 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
   SB.getBuilder().CreateBr(Exit);
 }
 
-Instruction *MixFunction::buildInstruction(Instruction *I) {
+void MixFunction::buildInstruction(Instruction *I) {
   if (BTA.getStage(I) == F->getLastStage() || isa<ReturnInst>(I)) {
-    return SB.stage(I);
+    SB.stage(I);
+    return;
   }
 
   if (auto *Phi = dyn_cast<PHINode>(I)) {
     SB.defineStatic(Phi, BTA.getPhiValueBindingTime(Phi) == F->getLastStage());
   }
 
-  return SB.stageStatic(I);
+  SB.stageStatic(I);
 }
 
 Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
   Function *MixedF =
       cast<Function>(cast<ConstantExpr>(I.getArgOperand(0))->getOperand(0));
 
-  const BindingTimeAnalysis &BTA = getAnalysis<BindingTimeAnalysis>(*MixedF);
+  // Analyze called functions.
+  BindingTimeAnalysis &BTA = getAnalysis<BindingTimeAnalysis>(*MixedF);
+  const CallGraphNode *MixedCGN = (*CG)[MixedF];
+
+  for (auto CGN = df_begin(MixedCGN); CGN != df_end(MixedCGN);) {
+    auto *F = CGN->getFunction();
+
+    if (F && F->isStaged()) {
+      BTA.runOnFunction(*F);
+      ++CGN;
+    } else {
+      CGN.skipChildren();
+    }
+  }
 
   // Print Mix header after the analysis.
   DEBUG(dbgs() << "---- Mix : @" << MixedF->getName() << " ----\n"
