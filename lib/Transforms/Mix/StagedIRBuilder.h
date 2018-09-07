@@ -59,11 +59,15 @@ public:
   Instruction *Builder{};
   Instruction *Module{};
 
+  ~StagedModule() { assert(!Parent && "StagedModule is not disposed"); }
+
   template <typename IRBuilder>
   static StagedModule build(IRBuilder &B, Value *StagedContext,
                             const Twine &ModuleID);
 
-  Function *getParent() const { return &Parent; }
+  template <typename IRBuilder> void dispose(IRBuilder &B);
+
+  Function *getParent() const { return Parent; }
 
   Instruction *lookupType(Type *Ty) const { return Types.lookup(Ty); }
 
@@ -74,37 +78,43 @@ public:
     (void)Inserted;
   }
 
-  Type *getDoubleTy() { return mix::getDoubleTy(Parent.getContext()); }
-  IntegerType *getBoolTy() { return mix::getBoolTy(Parent.getContext()); }
+  Type *getDoubleTy() { return mix::getDoubleTy(Parent->getContext()); }
+  IntegerType *getBoolTy() { return mix::getBoolTy(Parent->getContext()); }
   IntegerType *getIntPredicateTy() {
-    return mix::getIntPredicateTy(Parent.getContext());
+    return mix::getIntPredicateTy(Parent->getContext());
   }
-  IntegerType *getLinkageTy() { return mix::getLinkageTy(Parent.getContext()); }
-  IntegerType *getOpcodeTy() { return mix::getOpcodeTy(Parent.getContext()); }
+  IntegerType *getLinkageTy() {
+    return mix::getLinkageTy(Parent->getContext());
+  }
+  IntegerType *getOpcodeTy() { return mix::getOpcodeTy(Parent->getContext()); }
   IntegerType *getUnsignedIntTy() {
-    return mix::getUnsignedIntTy(Parent.getContext());
+    return mix::getUnsignedIntTy(Parent->getContext());
   }
   IntegerType *getUnsignedLongLongIntTy() {
-    return mix::getUnsignedLongLongIntTy(Parent.getContext());
+    return mix::getUnsignedLongLongIntTy(Parent->getContext());
   }
   PointerType *getBasicBlockPtrTy() {
-    return mix::getBasicBlockPtrTy(Parent.getContext());
+    return mix::getBasicBlockPtrTy(Parent->getContext());
   }
   PointerType *getBuilderPtrTy() {
-    return mix::getBuilderPtrTy(Parent.getContext());
+    return mix::getBuilderPtrTy(Parent->getContext());
   }
-  PointerType *getCharPtrTy() { return mix::getCharPtrTy(Parent.getContext()); }
+  PointerType *getCharPtrTy() {
+    return mix::getCharPtrTy(Parent->getContext());
+  }
   PointerType *getContextPtrTy() {
-    return mix::getContextPtrTy(Parent.getContext());
+    return mix::getContextPtrTy(Parent->getContext());
   }
-  PointerType *getTypePtrTy() { return mix::getTypePtrTy(Parent.getContext()); }
+  PointerType *getTypePtrTy() {
+    return mix::getTypePtrTy(Parent->getContext());
+  }
   PointerType *getValuePtrTy() {
-    return mix::getValuePtrTy(Parent.getContext());
+    return mix::getValuePtrTy(Parent->getContext());
   }
 
   Constant *getAPIFunction(const Twine &Name, Type *Result,
                            ArrayRef<Type *> Params) {
-    return Parent.getParent()->getOrInsertFunction(
+    return Parent->getParent()->getOrInsertFunction(
         Name.str(), FunctionType::get(Result, Params, false));
   }
 
@@ -119,7 +129,7 @@ public:
 
   GlobalVariable *createGlobalString(StringRef Str,
                                      const Twine &Name = "mix.name") {
-    IRBuilderBase B(Parent.getContext());
+    IRBuilderBase B(Parent->getContext());
     B.SetInsertPoint(Builder->getParent());
 
     // Does not actually build any instructions.
@@ -127,9 +137,9 @@ public:
   }
 
 private:
-  StagedModule(Function &Parent) : Parent(Parent) {}
+  StagedModule(Function *Parent) : Parent(Parent) {}
 
-  Function &Parent;
+  Function *Parent;
   DenseMap<Type *, Instruction *> Types;
 };
 
@@ -156,7 +166,6 @@ public:
   Instruction *setName(Instruction *I, StringRef Name);
   Instruction *positionBuilderAtEnd(Instruction *StagedBasicBlock,
                                     const Twine &InstName = "");
-  Instruction *disposeBuilder(const Twine &InstName = "");
 
   // Stage a type by inserting commands to reconstruct it.
   Instruction *stage(Type *Ty, const Twine &InstName = "");
@@ -216,7 +225,7 @@ private:
 template <typename IRBuilder>
 StagedModule StagedModule::build(IRBuilder &B, Value *StagedContext,
                                  const Twine &ModuleID) {
-  StagedModule SM(*B.GetInsertBlock()->getParent());
+  StagedModule SM(B.GetInsertBlock()->getParent());
 
   SM.Context = StagedContext;
   SM.Builder =
@@ -229,6 +238,15 @@ StagedModule StagedModule::build(IRBuilder &B, Value *StagedContext,
                            {MID, SM.Context}, "module");
 
   return SM;
+}
+
+template <typename IRBuilder> void StagedModule::dispose(IRBuilder &B) {
+  B.CreateCall(getDisposeBuilderFn(), Builder);
+
+  Context = nullptr;
+  Builder = nullptr;
+  Module = nullptr;
+  Parent = nullptr;
 }
 
 template <typename IRBuilder>
@@ -315,11 +333,6 @@ StagedIRBuilder<IRBuilder>::positionBuilderAtEnd(Instruction *StagedBlock,
                                                  const Twine &InstName) {
   return B.CreateCall(SM.getPositionBuilderAtEndFn(), {SM.Builder, StagedBlock},
                       InstName);
-}
-
-template <typename IRBuilder>
-Instruction *StagedIRBuilder<IRBuilder>::disposeBuilder(const Twine &InstName) {
-  return B.CreateCall(SM.getDisposeBuilderFn(), SM.Builder, InstName);
 }
 
 template <typename IRBuilder>

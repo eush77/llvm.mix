@@ -332,7 +332,6 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
     DEBUG(dbgs() << "  (no static terminator)\n\n");
   }
 
-  SB.disposeBuilder();
   SB.getBuilder().CreateBr(Exit);
 }
 
@@ -375,7 +374,10 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
                   make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA,
                   Tail);
   cast<BranchInst>(Head->getTerminator())->setSuccessor(0, Mix.getEntry());
-  BranchInst::Create(Tail, Mix.getExit());
+
+  B.SetInsertPoint(Mix.getExit());
+  SM.dispose(B);
+  B.CreateBr(Tail);
 
   return new BitCastInst(Mix.getFunction(), I.getType(), "", &I);
 }
