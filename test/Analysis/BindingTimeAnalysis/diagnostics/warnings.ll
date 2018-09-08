@@ -1,4 +1,4 @@
-; RUN: not opt -disable-output -bta %s 2>&1 | FileCheck %s --implicit-check-not="{{[^ ]}}"
+; RUN: opt -disable-output -bta %s 2>&1 | FileCheck %s --implicit-check-not="{{[^ ]}}"
 
 ; CHECK: warning: Multiple stage(0) terminators of %entry:
 ; CHECK: br label %exit  ; in %left
@@ -40,11 +40,4 @@ merge1:
   br label %merge
 merge:
   ret i32 1
-}
-
-; CHECK: error: Inferred stage(1) contradicts the declared return stage of @retstage:
-; CHECK: ret i32 %x  ; in %entry
-define i32 @retstage(i32 stage(1) %x) stage(1) {
-entry:
-  ret i32 %x
 }

@@ -32,6 +32,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/IR/Use.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Pass.h"
 #include "llvm/PassAnalysisSupport.h"
@@ -91,24 +92,62 @@ bool BindingTimeAnalysis::updateStage(const Value *V, unsigned Stage) {
   return true;
 }
 
+namespace {
+
+void verifyUse(const Use &U, unsigned IncomingStage) {
+  if (auto *I = dyn_cast<CallInst>(U.getUser())) {
+    Function *Callee = I->getCalledFunction();
+
+    if (Callee && Callee->isStaged() &&
+        Callee->getParamStage(U.getOperandNo()) < IncomingStage) {
+      U->getContext().diagnose(DiagnosticInfoBindingTime(
+          DS_Error,
+          "Inferred argument stage(" + Twine(IncomingStage) +
+              ") contradicts the declared parameter stage of @" +
+              Callee->getName(),
+          I));
+    }
+  }
+
+  if (auto *I = dyn_cast<ReturnInst>(U.getUser())) {
+    Function *F = I->getFunction();
+
+    if (F->getReturnStage() < IncomingStage) {
+      F->getContext().diagnose(DiagnosticInfoBindingTime(
+          DS_Error,
+          "Inferred stage(" + Twine(IncomingStage) +
+              ") contradicts the declared return stage of @" + F->getName(),
+          I));
+    }
+  }
+}
+
+} // namespace
+
 // Add transitive non-phi users of a value to the worklist with a given
 // incoming stage value.
 void BindingTimeAnalysis::addTransitiveNonPhiUsers(const Value *V,
                                                    unsigned IncomingStage) {
-  SmallSetVector<const Value *, 4> TransitiveUsers(V->user_begin(),
-                                                   V->user_end());
-  unsigned NumDirectUsers = TransitiveUsers.size();
+  SmallSetVector<const Use *, 4> TransitiveUses;
 
-  for (unsigned TUNum = 0; TUNum < TransitiveUsers.size(); ++TUNum) {
-    const Value *TU = TransitiveUsers[TUNum];
+  auto addUsesOf = [&](const Value *V) {
+    for (const Use &U : V->uses()) {
+      TransitiveUses.insert(&U);
+    }
+  };
+
+  addUsesOf(V);
+  unsigned NumDirectUsers = TransitiveUses.size();
+
+  for (unsigned TUNum = 0; TUNum < TransitiveUses.size(); ++TUNum) {
+    const Use &U = *TransitiveUses[TUNum];
 
     // Close the set of transitive users by including users of phi users.
-    if (auto *Phi = dyn_cast<PHINode>(TU)) {
-      for (const Value *V : Phi->users()) {
-        TransitiveUsers.insert(V);
-      }
+    if (auto *Phi = dyn_cast<PHINode>(U.getUser())) {
+      addUsesOf(Phi);
     } else {
-      enqueue(TU, IncomingStage,
+      verifyUse(U, IncomingStage);
+      enqueue(U.getUser(), IncomingStage,
               TUNum < NumDirectUsers ? WorklistItem::Operand
                                      : WorklistItem::TransitiveOperand,
               V);
@@ -145,14 +184,6 @@ void BindingTimeAnalysis::fixInstruction(const Instruction *I,
   if (auto *Term = dyn_cast<TerminatorInst>(I)) {
     for (const BasicBlock *BB : Term->successors()) {
       enqueue(BB, MaxOperandStage, WorklistItem::PredTerminator, Term);
-    }
-
-    if (isa<ReturnInst>(I) && F->getReturnStage() < MaxOperandStage) {
-      F->getContext().diagnose(DiagnosticInfoBindingTime(
-          DS_Error,
-          "Inferred stage(" + Twine(MaxOperandStage) +
-              (") contradicts the declared return stage of @") + F->getName(),
-          I));
     }
   }
 }
