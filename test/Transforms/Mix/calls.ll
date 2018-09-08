@@ -37,12 +37,29 @@ define internal i32 @i(i32 %x) {
 define stage(1) i32 @f(i32 stage(1) %x, i32 %n) stage(1) {
   ; CHECK-STAGE-NEXT: %y = add i32 %x, 4
   %y = add i32 %x, %n
-  ; CHECK-STAGE-NEXT: ret i32 %y
+  %m = add i32 %n, 1
+  ; CHECK-STAGE-NEXT: %z = call i32 @h(i32 %y)
+  %z = call i32 @h(i32 %y, i32 %m)
+  ; CHECK-STAGE-NEXT: ret i32 %z
+  ret i32 %z
+}
+
+; CHECK-LABEL: define stage(1) i32 @h(i32 stage(1) %x, i32 %m)
+; CHECK-STAGE-LABEL: define internal i32 @h(i32 %x)
+define stage(1) i32 @h(i32 stage(1) %x, i32 %m) stage(1) {
+  ; CHECK-STAGE-NEXT: %y = mul i32 %x, 5
+  %y = mul i32 %x, %m
+; CHECK-STAGE-NEXT: ret i32 %y
   ret i32 %y
 }
 
 ; CHECK-STAGE-LABEL: define internal i32 @f.1(i32 %x)
 ; CHECK-STAGE-NEXT: %y = add i32 %x, 6
+; CHECK-STAGE-NEXT: %z = call i32 @h.2(i32 %y)
+; CHECK-STAGE-NEXT: ret i32 %z
+
+; CHECK-STAGE-LABEL: define internal i32 @h.2(i32 %x)
+; CHECK-STAGE-NEXT: %y = mul i32 %x, 7
 ; CHECK-STAGE-NEXT: ret i32 %y
 
 ; CHECK-LABEL: define void @main()

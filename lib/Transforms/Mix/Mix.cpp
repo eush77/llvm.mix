@@ -317,11 +317,13 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
             // Split arguments by binding time.
             for (unsigned ArgNo = 0; ArgNo < Call->getNumArgOperands();
                  ++ArgNo) {
-              auto &ArgVec = (Callee->getParamStage(ArgNo) < F->getLastStage())
-                                 ? StaticArgs
-                                 : DynamicArgs;
+              Value *Arg = Call->getArgOperand(ArgNo);
 
-              ArgVec.push_back(Call->getArgOperand(ArgNo));
+              if (Callee->getParamStage(ArgNo) < F->getLastStage()) {
+                StaticArgs.push_back(SB.defineStatic(Arg));
+              } else {
+                DynamicArgs.push_back(Arg);
+              }
             }
 
             // Split the call basic block.
