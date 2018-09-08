@@ -148,7 +148,7 @@ void BindingTimeAnalysis::fixInstruction(const Instruction *I,
     }
 
     if (isa<ReturnInst>(I) && F->getReturnStage() < MaxOperandStage) {
-      F->getContext().diagnose(DiagnosticInfoMix(
+      F->getContext().diagnose(DiagnosticInfoBindingTime(
           DS_Error,
           "Inferred stage(" + Twine(MaxOperandStage) +
               (") contradicts the declared return stage of @") + F->getName(),
@@ -220,12 +220,12 @@ void BindingTimeAnalysis::fixTerminators() {
         // Don't emit the diagnostic in the debug mode.
         DEBUG(continue);
 
-        F->getContext().diagnose(
-            DiagnosticInfoMix(DS_Warning,
-                              "Multiple stage(" + Twine(Stage) +
-                                  ") terminators of %" + SourceBB.getName(),
-                              Term));
-        F->getContext().diagnose(DiagnosticInfoMix(
+        F->getContext().diagnose(DiagnosticInfoBindingTime(
+            DS_Warning,
+            "Multiple stage(" + Twine(Stage) + ") terminators of %" +
+                SourceBB.getName(),
+            Term));
+        F->getContext().diagnose(DiagnosticInfoBindingTime(
             DS_Note,
             "The other terminator is moved to stage(" + Twine(Stage + 1) + ")",
             T));
@@ -641,7 +641,7 @@ INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
 INITIALIZE_PASS_END(BindingTimeAnalysisPrinter, "print-bta",
                     "Binding-Time Analysis Printer", false, true)
 
-void DiagnosticInfoMix::print(DiagnosticPrinter &DP) const {
+void DiagnosticInfoBindingTime::print(DiagnosticPrinter &DP) const {
   DP << Msg;
 
   if (!I)
