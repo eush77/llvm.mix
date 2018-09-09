@@ -59,24 +59,21 @@ using namespace llvm;
 
 // True if the instruction must be evaluated at the last stage.
 bool BindingTimeAnalysis::isLastStage(const Instruction *I) const {
-  if (I->mayHaveSideEffects() || I->mayReadFromMemory()) {
-    return true;
-  }
-
   switch (I->getOpcode()) {
   case Instruction::Br:
+  case Instruction::Call:
   case Instruction::IndirectBr:
   case Instruction::Ret:
   case Instruction::Switch:
     return false;
 
   case Instruction::Alloca:
-  case Instruction::Call:
   case Instruction::Invoke:
     return true;
 
   default:
-    return I->getType()->isVoidTy();
+    return I->getType()->isVoidTy() || I->mayHaveSideEffects() ||
+           I->mayReadFromMemory();
   }
 }
 
@@ -203,6 +200,14 @@ void BindingTimeAnalysis::initializeWorklist() {
     for (const Instruction &I : BB) {
       if (isLastStage(&I)) {
         enqueue(&I, F->getLastStage(), WorklistItem::LastStage);
+      } else if (auto *Call = dyn_cast<CallInst>(&I)) {
+        Function *Callee = Call->getCalledFunction();
+        unsigned Stage =
+            Callee && Callee->isStaged() && !Callee->getReturnType()->isVoidTy()
+                ? Callee->getReturnStage()
+                : F->getLastStage();
+
+        enqueue(&I, Stage, WorklistItem::CallStage);
       } else if (isa<ReturnInst>(I)) {
         enqueue(&I, F->getReturnStage(), WorklistItem::ReturnStage);
       } else {
@@ -372,6 +377,10 @@ void BindingTimeAnalysis::WorklistItem::print(raw_ostream &OS,
   switch (R) {
   case Attribute:
     OS << "attribute";
+    break;
+
+  case CallStage:
+    OS << "call stage";
     break;
 
   case Default:

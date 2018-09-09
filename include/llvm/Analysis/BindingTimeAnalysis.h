@@ -83,6 +83,7 @@ private:
   public:
     enum Reason {
       Attribute,
+      CallStage,
       Default,
       LastStage,
       Operand,
