@@ -189,7 +189,7 @@ public:
   Value *defineStatic(Value *V);
   Value *defineStatic(Argument *A, Value *SA);
   BasicBlock *defineStatic(BasicBlock *BB);
-  Instruction *defineStatic(Instruction *I);
+  Instruction *defineStatic(Instruction *I, Instruction *V = nullptr);
   PHINode *defineStatic(PHINode *Phi, bool Staged);
 
   // Stage a static value as a constant in generated code.
@@ -704,14 +704,25 @@ BasicBlock *StagedIRBuilder<IRBuilder>::defineStatic(BasicBlock *BB) {
 }
 
 template <typename IRBuilder>
-Instruction *StagedIRBuilder<IRBuilder>::defineStatic(Instruction *I) {
-  if (I->getFunction() == B.GetInsertBlock()->getParent())
+Instruction *StagedIRBuilder<IRBuilder>::defineStatic(Instruction *I,
+                                                      Instruction *V) {
+  assert((!V || I->getType() == V->getType()) && "Type mismatch");
+
+  if (I->getFunction() == B.GetInsertBlock()->getParent()) {
+    assert(!V && "Cannot define this instruction");
     return I;
+  }
 
   auto *SI = StaticInstructions.lookup(I);
 
-  if (SI)
+  if (SI) {
+    assert(!V && "Instruction is already defined");
     return SI;
+  }
+
+  if (V) {
+    return StaticInstructions[I] = V;
+  }
 
   assert(!isa<PHINode>(I) && "Static PHI nodes require an explicit type");
 

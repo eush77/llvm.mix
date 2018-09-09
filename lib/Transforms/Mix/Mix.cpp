@@ -191,7 +191,7 @@ public:
   BasicBlock *getEntry() const { return Entry; }
   BasicBlock *getExit() const { return Exit; }
 
-  Value *getStaticReturnValue() { return StaticReturn; }
+  Instruction *getStaticReturnValue() { return StaticReturn; }
 
 private:
   template <typename ArgsT>
@@ -348,7 +348,15 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
                                          Mix.getFunctionType()->getPointerTo()),
                                      DynamicArgs, Call->getName())));
             SB.setCalledValue(StagedCall, Mix.getFunction());
-            SB.setStagedValue(Call, StagedCall);
+
+            if (Callee->getReturnType()->isVoidTy() ||
+                Callee->getReturnStage() == F->getLastStage()) {
+              SB.setStagedValue(Call, StagedCall);
+            } else {
+              SB.defineStatic(Call, Mix.getStaticReturnValue());
+              SB.stageStatic(Call);
+            }
+
             continue;
           } else if (Callee->hasExternalLinkage()) {
             Instruction *StagedCallee = SB.createFunction(
