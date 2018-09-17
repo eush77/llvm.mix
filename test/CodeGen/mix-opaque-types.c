@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -emit-llvm %s -o - | FileCheck %s
 
-float f(int a, float b) {
+float f(int a, float b) __stage(1) {
   return a + b;
 }
 

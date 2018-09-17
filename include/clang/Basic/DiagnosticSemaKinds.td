@@ -2528,6 +2528,11 @@ def err_attribute_invalid_size : Error<
   "vector size not an integral multiple of component size">;
 def err_attribute_zero_size : Error<"zero vector size">;
 def err_attribute_size_too_large : Error<"vector size too large">;
+def err_stage_incompatible : Error<
+  "Function stage is incompatible with the stage%select{|s}0 of its "
+  "%select{return value|arguments}0">;
+def err_stage_void : Error<
+  "__stage attribute does not apply to void return values">;
 def err_typecheck_vector_not_convertable_implict_truncation : Error<
    "cannot convert between %select{scalar|vector}0 type %1 and vector type"
    " %2 as implicit conversion would cause truncation">;
@@ -3299,8 +3304,19 @@ def err_attribute_cleanup_func_must_take_one_arg : Error<
 def err_attribute_cleanup_func_arg_incompatible_type : Error<
   "'cleanup' function %0 parameter has "
   "%diff{type $ which is incompatible with type $|incompatible type}1,2">;
-def err_attribute_mix_arg_not_function : Error<
-  "'%select{mix|mix_ir}0' argument %select{|%2 }1is not a function">;
+def err_attribute_mix_arg_function : Error<
+  "'%select{mix|mix_ir}0' argument%select{| %2| %2| %2}1 does not refer to "
+  "a%select{||| staged}1 function%select{|| with a body|}1">;
+def err_attribute_mix_return_type : Error<
+  "Expected%select{| a pointer}0 return type%select{ %1|}0 from a function "
+  "with '%select{mix|mix_ir}0' attribute">;
+def err_attribute_mix_argument_count : Error<
+  "Expected%select{| at least}2 %1 arguments from a function with "
+  "'%select{mix|mix_ir}0' attribute">;
+def err_attribute_mix_argument_type : Error<
+  "Argument type does not match argument type %0 of '%1'">;
+def err_attribute_mix_context_argument_type : Error<
+  "Context argument does not have a pointer type">;
 def err_attribute_regparm_wrong_platform : Error<
   "'regparm' is not valid on this platform">;
 def err_attribute_regparm_invalid_number : Error<

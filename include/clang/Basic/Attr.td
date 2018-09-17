@@ -1189,8 +1189,9 @@ def MixIR : Attr {
 
 def Stage : Attr {
   let Spellings = [Keyword<"__stage">];
-  let Args = [UnsignedArgument<"Stage">];
-  let Subjects = SubjectList<[ParmVar]>;
+  let Args = [UnsignedArgument<"Stage">,
+              UnsignedArgument<"FunctionStage", 1>];
+  let Subjects = SubjectList<[Function, ParmVar]>;
   let Documentation = [Undocumented];
 }
 

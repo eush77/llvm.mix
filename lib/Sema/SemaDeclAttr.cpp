@@ -1292,7 +1292,7 @@ static void handleTestTypestateAttr(Sema &S, Decl *D,
                                 Attr.getAttributeSpellingListIndex()));
 }
 
-static void handleMixAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+static void handleMixAttr(Sema &S, FunctionDecl *D, const AttributeList &Attr) {
   bool IsMixIR = Attr.getKind() == AttributeList::AT_MixIR;
 
   if (checkAttrMutualExclusion<MixAttr>(S, D, Attr.getRange(),
@@ -1306,13 +1306,66 @@ static void handleMixAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 
   if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     if (!(FD = dyn_cast<FunctionDecl>(DRE->getDecl()))) {
-      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_not_function)
+      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
           << IsMixIR << 1 << DRE->getNameInfo().getName();
       return;
     }
+    if (!FD->hasBody()) {
+      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
+          << IsMixIR << 2 << DRE->getNameInfo().getName();
+      return;
+    }
+    if (!FD->hasAttr<StageAttr>() ||
+        !FD->getAttr<StageAttr>()->getFunctionStage()) {
+      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
+          << IsMixIR << 3 << DRE->getNameInfo().getName();
+      return;
+    }
   } else {
-    S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_not_function)
+    S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
         << IsMixIR << 0;
+    return;
+  }
+
+  if ((!IsMixIR && D->getReturnType() != FD->getReturnType()) ||
+      (IsMixIR && !D->getReturnType()->isPointerType())) {
+    S.Diag(D->getReturnTypeSourceRange().getBegin(),
+           diag::err_attribute_mix_return_type)
+        << IsMixIR << FD->getReturnType();
+    return;
+  }
+
+  SmallVector<ParmVarDecl *, 4> Stage0Params;
+  std::copy_if(FD->param_begin(), FD->param_end(),
+               std::back_inserter(Stage0Params), [](const ParmVarDecl *PVD) {
+                 return !PVD->hasAttr<StageAttr>() ||
+                        !PVD->getAttr<StageAttr>()->getStage();
+               });
+
+  if ((!FD->isVariadic() && D->param_size() != 1 + Stage0Params.size()) ||
+      (FD->isVariadic() && D->param_size() < 1 + Stage0Params.size())) {
+    S.Diag(D->getSourceRange().getBegin(),
+           diag::err_attribute_mix_argument_count)
+        << IsMixIR << static_cast<unsigned>(1 + Stage0Params.size())
+        << FD->isVariadic();
+    return;
+  }
+
+  if (!D->getParamDecl(0)->getType()->isPointerType()) {
+    S.Diag(D->getParamDecl(0)->getSourceRange().getBegin(),
+           diag::err_attribute_mix_context_argument_type);
+    return;
+  }
+
+  auto M = std::mismatch(Stage0Params.begin(), Stage0Params.end(),
+                         D->param_begin() + 1, [](auto *Left, auto *Right) {
+                           return Left->getType() == Right->getType();
+                         });
+
+  if (M.first != Stage0Params.end()) {
+    S.Diag((*M.second)->getSourceRange().getBegin(),
+           diag::err_attribute_mix_argument_type)
+        << (*M.first)->getType() << FD->getName();
     return;
   }
 
@@ -1326,25 +1379,38 @@ static void handleMixAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 }
 
 static void handleStageAttr(Sema &S, Decl *D, const AttributeList &Attr) {
-  if (D->hasAttr<StageAttr>()) {
-    S.Diag(D->getLocStart(), diag::err_attribute_only_once_per_parameter)
-        << Attr.getName();
-    return;
-  }
-
-  const Expr *Arg = Attr.getArgAsExpr(0);
-
   int Stage;
-  if (!checkPositiveIntArgument(S, Attr, Arg, Stage))
+  int FunctionStage = 0;
+
+  if (!checkPositiveIntArgument(S, Attr, Attr.getArgAsExpr(0), Stage))
     return;
 
-  if (Stage == 0) {
-    S.Diag(Arg->getExprLoc(), diag::err_attribute_argument_is_zero)
-        << Attr.getName();
+  if (Attr.getNumArgs() > 1 &&
+      !checkPositiveIntArgument(S, Attr, Attr.getArgAsExpr(1), FunctionStage))
     return;
+
+  if (auto *FD = dyn_cast<FunctionDecl>(D)) {
+    if (Stage && FD->getReturnType()->isVoidType()) {
+      S.Diag(Attr.getLoc(), diag::err_stage_void);
+      return;
+    }
   }
 
-  D->addAttr(::new (S.Context) StageAttr(Attr.getRange(), S.Context, Stage,
+  if (auto *SA = D->getAttr<StageAttr>()) {
+    if ((Stage && SA->getStage()) ||
+        (FunctionStage && SA->getFunctionStage())) {
+      S.Diag(D->getLocStart(), diag::err_attribute_only_once_per_parameter)
+          << Attr.getName();
+      return;
+    }
+
+    Stage |= SA->getStage();
+    FunctionStage |= SA->getFunctionStage();
+    D->dropAttr<StageAttr>();
+  }
+
+  D->addAttr(::new (S.Context)
+                 StageAttr(Attr.getRange(), S.Context, Stage, FunctionStage,
                                          Attr.getAttributeSpellingListIndex()));
 }
 
@@ -6616,7 +6682,7 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   // Mixed execution attributes.
   case AttributeList::AT_Mix:
   case AttributeList::AT_MixIR:
-    handleMixAttr(S, D, Attr);
+    handleMixAttr(S, cast<FunctionDecl>(D), Attr);
     break;
   case AttributeList::AT_Stage:
     handleStageAttr(S, D, Attr);

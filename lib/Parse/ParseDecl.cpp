@@ -741,7 +741,7 @@ void Parser::ParseNullabilityTypeSpecifiers(ParsedAttributes &attrs) {
   }
 }
 
-void Parser::ParseStageSpecifier(ParsedAttributes &Attrs) {
+void Parser::ParseStageSpecifier(ParsedAttributes &Attrs, bool IsFunctionAttr) {
   IdentifierInfo *KWName = Tok.getIdentifierInfo();
   SourceLocation KWLoc = ConsumeToken();
 
@@ -757,8 +757,18 @@ void Parser::ParseStageSpecifier(ParsedAttributes &Attrs) {
 
   T.consumeClose();
 
-  ArgsVector ArgExprs{ArgExpr.get()};
-  Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), 1,
+  ArgsVector ArgExprs;
+
+  if (IsFunctionAttr) {
+    ASTContext &Ctx = Actions.getASTContext();
+
+    ArgExprs.push_back(new (Ctx) IntegerLiteral(
+        Ctx, Ctx.MakeIntValue(0, Ctx.UnsignedIntTy), Ctx.UnsignedIntTy, KWLoc));
+  }
+
+  ArgExprs.push_back(ArgExpr.get());
+
+  Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), ArgExprs.size(),
                AttributeList::AS_Keyword);
 }
 
@@ -1944,6 +1954,12 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
   LateParsedAttrList LateParsedAttrs(true);
   if (D.isFunctionDeclarator()) {
     MaybeParseGNUAttributes(D, &LateParsedAttrs);
+
+    if (Tok.is(tok::kw___stage)) {
+      ParsedAttributes Attrs(AttrFactory);
+      ParseStageSpecifier(Attrs, true);
+      D.takeAttributes(Attrs, {});
+    }
 
     // The _Noreturn keyword can't appear here, unlike the GNU noreturn
     // attribute. If we find the keyword here, tell the user to put it
