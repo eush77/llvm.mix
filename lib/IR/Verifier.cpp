@@ -4003,6 +4003,13 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
       "an array");
     break;
   }
+  case Intrinsic::object_stage: {
+    Assert(isa<ConstantInt>(CS.getArgOperand(1)),
+           "Stage argument of llvm.object.stage must be a constant int", CS);
+    Assert(cast<ConstantInt>(CS.getArgOperand(1))->getSExtValue() >= 0,
+           "Stage argument of llvm.object.stage must be non-negative", CS);
+    break;
+  }
   case Intrinsic::mix_ir: {
     auto *FID = dyn_cast<ConstantExpr>(CS.getArgOperand(0));
     Assert(FID, "First argument of llvm.mix.ir is not a constant expression",

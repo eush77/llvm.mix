@@ -635,6 +635,10 @@ def int_eh_sjlj_setup_dispatch  : Intrinsic<[], []>;
 //===------------------ Mixed Execution Intrinsics ------------------------===//
 //
 
+def int_object_stage
+    : Intrinsic<[], [LLVMAnyPointerType<llvm_any_ty>, llvm_i32_ty],
+                [IntrNoMem, NoCapture<0>]>;
+
 def int_mix_ir
     : Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_ptr_ty, llvm_vararg_ty],
                 [IntrArgMemOnly]>;

@@ -12395,6 +12395,38 @@ Mixed Execution Intrinsics
 These intrinsics provide access to the Mix runtime for run-time function
 specialization.
 
+'``llvm.object.stage``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+This is an overloaded intrinsic. You can use ``llvm.object.stage`` on any
+pointer.
+
+::
+
+      declare void @llvm.object.stage.p0i32(i32* %object, i32 %stage)
+
+Overview:
+"""""""""
+
+This intrinsic sets binding-time stage of the referenced object.
+
+Arguments:
+""""""""""
+
+The argument ``%object`` is a pointer to an arbitrary object.
+
+The argument ``%stage`` must be a non-negative constant and is a stage number.
+
+Semantics:
+""""""""""
+
+This intrinsic annotates the object pointer with the binding-time stage. It is
+only used to aid binding-time analysis and does not (directly) affect code
+generation.
+
 '``llvm.mix.ir``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
