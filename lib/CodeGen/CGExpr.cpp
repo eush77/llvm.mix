@@ -3825,6 +3825,12 @@ LValue CodeGenFunction::EmitLValueForField(LValue base,
     // For structs, we GEP to the field that the record layout suggests.
     addr = emitAddrOfFieldStorage(*this, addr, field);
 
+    if (auto *SA = field->getAttr<StageAttr>()) {
+      Builder.CreateCall(
+          CGM.getIntrinsic(llvm::Intrinsic::object_stage, addr.getType()),
+          {addr.getPointer(), Builder.getInt32(SA->getStage())});
+    }
+
     // If this is a reference field, load the reference right now.
     if (FieldType->isReferenceType()) {
       LValue RefLVal = MakeAddrLValue(addr, FieldType, FieldBaseInfo,

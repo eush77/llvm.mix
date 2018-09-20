@@ -1953,13 +1953,13 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
   // These will be parsed in ParseFunctionDefinition or ParseLexedAttrList.
   LateParsedAttrList LateParsedAttrs(true);
   if (D.isFunctionDeclarator()) {
-    MaybeParseGNUAttributes(D, &LateParsedAttrs);
-
     if (Tok.is(tok::kw___stage)) {
       ParsedAttributes Attrs(AttrFactory);
       ParseStageSpecifier(Attrs, true);
       D.takeAttributes(Attrs, {});
     }
+
+    MaybeParseGNUAttributes(D, &LateParsedAttrs);
 
     // The _Noreturn keyword can't appear here, unlike the GNU noreturn
     // attribute. If we find the keyword here, tell the user to put it
@@ -3902,6 +3902,12 @@ void Parser::ParseStructDeclaration(
         SkipUntil(tok::semi, StopBeforeMatch);
       else
         DeclaratorInfo.BitfieldSize = Res.get();
+    }
+
+    if (Tok.is(tok::kw___stage)) {
+      ParsedAttributes Attrs(AttrFactory);
+      ParseStageSpecifier(Attrs);
+      DeclaratorInfo.D.takeAttributes(Attrs, {});
     }
 
     // If attributes exist after the declarator, parse them.

@@ -1191,7 +1191,7 @@ def Stage : Attr {
   let Spellings = [Keyword<"__stage">];
   let Args = [UnsignedArgument<"Stage">,
               UnsignedArgument<"FunctionStage", 1>];
-  let Subjects = SubjectList<[Function, ParmVar]>;
+  let Subjects = SubjectList<[Function, ParmVar, Field]>;
   let Documentation = [Undocumented];
 }
 
