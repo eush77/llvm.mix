@@ -12406,7 +12406,7 @@ pointer.
 
 ::
 
-      declare void @llvm.object.stage.p0i32(i32* %object, i32 %stage)
+      declare i32* @llvm.object.stage.p0i32(i32* %object, i32 %stage)
 
 Overview:
 """""""""
@@ -12425,7 +12425,7 @@ Semantics:
 
 This intrinsic annotates the object pointer with the binding-time stage. It is
 only used to aid binding-time analysis and does not (directly) affect code
-generation.
+generation. It returns the value of the first argument.
 
 '``llvm.mix.ir``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
