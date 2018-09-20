@@ -1378,6 +1378,13 @@ static void handleMixAttr(Sema &S, FunctionDecl *D, const AttributeList &Attr) {
   }
 }
 
+static void handleStagedAttr(Sema &S, RecordDecl *D,
+                             const AttributeList &Attr) {
+  for (FieldDecl *FD : D->fields()) {
+    FD->addAttr(::new (S.Context) StageAttr(Attr.getRange(), S.Context, 0, 0));
+  }
+}
+
 static void handleStageAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   int Stage;
   int FunctionStage = 0;
@@ -1394,6 +1401,9 @@ static void handleStageAttr(Sema &S, Decl *D, const AttributeList &Attr) {
       S.Diag(Attr.getLoc(), diag::err_stage_void);
       return;
     }
+  } else if (auto *FD = dyn_cast<FieldDecl>(D)) {
+    // Set the StagedAttr implicitly on the record itself.
+    handleStagedAttr(S, FD->getParent(), Attr);
   }
 
   if (auto *SA = D->getAttr<StageAttr>()) {
@@ -6686,6 +6696,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_Stage:
     handleStageAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_Staged:
+    handleStagedAttr(S, cast<RecordDecl>(D), Attr);
     break;
 
   // Type safety attributes.

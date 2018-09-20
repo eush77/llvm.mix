@@ -1195,6 +1195,12 @@ def Stage : Attr {
   let Documentation = [Undocumented];
 }
 
+def Staged : Attr {
+  let Spellings = [Clang<"staged">];
+  let Subjects = SubjectList<[Struct]>;
+  let Documentation = [Undocumented];
+}
+
 def MSABI : InheritableAttr {
   let Spellings = [GCC<"ms_abi">];
 //  let Subjects = [Function, ObjCMethod];
