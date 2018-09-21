@@ -23,6 +23,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/Function.h"
@@ -31,6 +32,8 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/Use.h"
 #include "llvm/IR/Value.h"
@@ -57,13 +60,27 @@ using namespace llvm;
 
 #define DEBUG_TYPE "bta"
 
+// Get the earliest stage at which the pointed object is constant.
+unsigned BindingTimeAnalysis::getObjectStage(const Value *V) const {
+  if (auto *I = dyn_cast<IntrinsicInst>(V)) {
+    if (I->getIntrinsicID() == Intrinsic::object_stage) {
+      return std::min<unsigned>(
+          cast<ConstantInt>(I->getOperand(1))->getZExtValue(),
+          F->getLastStage());
+    }
+  }
+  return F->getLastStage();
+}
+
 // True if the instruction must be evaluated at the last stage.
 bool BindingTimeAnalysis::isLastStage(const Instruction *I) const {
   switch (I->getOpcode()) {
   case Instruction::Br:
   case Instruction::Call:
   case Instruction::IndirectBr:
+  case Instruction::Load:
   case Instruction::Ret:
+  case Instruction::Store:
   case Instruction::Switch:
     return false;
 
@@ -201,15 +218,27 @@ void BindingTimeAnalysis::initializeWorklist() {
       if (isLastStage(&I)) {
         enqueue(&I, F->getLastStage(), WorklistItem::LastStage);
       } else if (auto *Call = dyn_cast<CallInst>(&I)) {
+        auto *Intr = dyn_cast<IntrinsicInst>(Call);
         Function *Callee = Call->getCalledFunction();
-        unsigned Stage =
-            Callee && Callee->isStaged() && !Callee->getReturnType()->isVoidTy()
-                ? Callee->getReturnStage()
-                : F->getLastStage();
 
-        enqueue(&I, Stage, WorklistItem::CallStage);
+        if (Intr && Intr->getIntrinsicID() == Intrinsic::object_stage) {
+          enqueue(&I, 0, WorklistItem::Default);
+        } else if (Callee && Callee->isStaged() &&
+                   !Callee->getReturnType()->isVoidTy()) {
+          enqueue(&I, Callee->getReturnStage(), WorklistItem::CallStage);
+        } else {
+          enqueue(&I, F->getLastStage(), WorklistItem::LastStage);
+        }
+      } else if (auto *Load = dyn_cast<LoadInst>(&I)) {
+        enqueue(&I, getObjectStage(Load->getPointerOperand()),
+                WorklistItem::ObjectStage);
       } else if (isa<ReturnInst>(I)) {
         enqueue(&I, F->getReturnStage(), WorklistItem::ReturnStage);
+      } else if (auto *Store = dyn_cast<StoreInst>(&I)) {
+        unsigned Stage = getObjectStage(Store->getPointerOperand());
+        assert(Stage > 0 && "Storing to a stage(0) object");
+
+        enqueue(&I, Stage - 1, WorklistItem::ObjectStage);
       } else {
         enqueue(&I, 0, WorklistItem::Default);
       }
@@ -389,6 +418,10 @@ void BindingTimeAnalysis::WorklistItem::print(raw_ostream &OS,
 
   case LastStage:
     OS << "last stage";
+    break;
+
+  case ObjectStage:
+    OS << "object stage";
     break;
 
   case Operand:

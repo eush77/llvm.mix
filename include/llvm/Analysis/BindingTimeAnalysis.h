@@ -61,6 +61,7 @@ private:
   friend class BindingTimeAnalysisPlainAssemblyAnnotationWriter;
   friend class BindingTimeAnalysisColorAssemblyAnnotationWriter;
 
+  unsigned getObjectStage(const Value *V) const;
   bool isLastStage(const Instruction *I) const;
   bool updateStage(const Value *V, unsigned Stage);
   void addTransitiveNonPhiUsers(const Value *V, unsigned IncomingStage);
@@ -86,6 +87,7 @@ private:
       CallStage,
       Default,
       LastStage,
+      ObjectStage,
       Operand,
       Parent,
       PredTerminator,
