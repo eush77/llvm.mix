@@ -270,10 +270,16 @@ void BindingTimeAnalysis::initializeWorklist() {
       } else if (isa<ReturnInst>(I)) {
         enqueue(&I, F->getReturnStage(), WorklistItem::ReturnStage);
       } else if (auto *Store = dyn_cast<StoreInst>(&I)) {
-        unsigned Stage = getObjectStage(Store->getPointerOperand());
-        assert(Stage > 0 && "Storing to a stage(0) object");
+        const Value *P = Store->getPointerOperand();
+        unsigned ObjectStage = getObjectStage(P);
 
-        enqueue(&I, Stage - 1, WorklistItem::ObjectStage);
+        if (!ObjectStage) {
+          I.getContext().diagnose(DiagnosticInfoBindingTime(
+              DS_Error, "Storing to a stage(0) object",
+              {{getObjectStageAnnotation(P), None}, {Store, None}}));
+        }
+
+        enqueue(&I, ObjectStage - 1, WorklistItem::ObjectStage);
       } else {
         enqueue(&I, 0, WorklistItem::Default);
       }
