@@ -792,24 +792,42 @@ void DiagnosticInfoBindingTime::print(DiagnosticPrinter &DP) const {
 
   FOS << ':';
 
+  SmallVector<std::string, 3> ValStrings;
+
+  // Print values to strings to infer the comment column for annotations.
   for (auto &P : Vals) {
     const Value *V;
-    Optional<unsigned> Stage;
-    std::tie(V, Stage) = P;
+    std::tie(V, std::ignore) = P;
 
-    FOS << '\n';
+    ValStrings.push_back({});
+    raw_string_ostream OS(ValStrings.back());
 
     // Non-instruction values need some padding.
     if (!isa<Instruction>(V)) {
-      FOS << "  ";
+      OS << "  ";
     }
 
-    FOS << *V;
+    OS << *V;
+  }
 
-    auto annotate = [&FOS, StartComment = true]() mutable -> raw_ostream & {
+  // Column for annotation comments.
+  unsigned AnnColumn = std::accumulate(
+      ValStrings.begin(), ValStrings.end(), 0,
+      [](unsigned N, const std::string &S) {
+        return std::max(N, std::min<unsigned>(S.size() + 2, CommentColumn));
+      });
+
+  for (unsigned ValNum = 0; ValNum < Vals.size(); ++ValNum) {
+    const Value *V;
+    Optional<unsigned> Stage;
+    std::tie(V, Stage) = Vals[ValNum];
+
+    FOS << '\n' << ValStrings[ValNum];
+
+    auto annotate = [&, StartComment = true]() mutable -> raw_ostream & {
       if (StartComment) {
         StartComment = false;
-        return FOS.PadToColumn(CommentColumn) << "; ";
+        return FOS.PadToColumn(AnnColumn) << "; ";
       } else {
         return FOS << ", ";
       }
