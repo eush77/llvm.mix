@@ -725,8 +725,14 @@ void DiagnosticInfoBindingTime::print(DiagnosticPrinter &DP) const {
   formatted_raw_ostream FOS(OS);
 
   FOS << ":\n" << *I;
-  FOS.PadToColumn(CommentColumn) << "; in %" << I->getParent()->getName();
-  FOS.flush();
+  FOS.PadToColumn(CommentColumn);
 
+  if (I->getParent()->hasName()) {
+    FOS << "; in %" << I->getParent()->getName();
+  } else {
+    FOS << "; in entry block";
+  }
+
+  FOS.flush();
   DP << S;
 }
