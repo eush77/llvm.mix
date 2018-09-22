@@ -60,15 +60,28 @@ using namespace llvm;
 
 #define DEBUG_TYPE "bta"
 
+namespace {
+
+// Returns the intrinsic call that annotates the value with an object stage,
+// or null if no such call exists.
+const IntrinsicInst *getObjectStageAnnotation(const Value *V) {
+  if (auto *I = dyn_cast<IntrinsicInst>(V)) {
+    if (I->getIntrinsicID() == Intrinsic::object_stage) {
+      return I;
+    }
+  }
+  return nullptr;
+}
+
+} // namespace
+
 // Get the earliest stage at which the pointed object is constant. If it is
 // not constant at any stage, return `LastStage + 1'.
 unsigned BindingTimeAnalysis::getObjectStage(const Value *V) const {
-  if (auto *I = dyn_cast<IntrinsicInst>(V)) {
-    if (I->getIntrinsicID() == Intrinsic::object_stage) {
-      return std::min<unsigned>(
-          cast<ConstantInt>(I->getOperand(1))->getZExtValue(),
-          F->getLastStage() + 1);
-    }
+  if (auto *I = getObjectStageAnnotation(V)) {
+    return std::min<unsigned>(
+        cast<ConstantInt>(I->getOperand(1))->getZExtValue(),
+        F->getLastStage() + 1);
   }
   return F->getLastStage() + 1;
 }
@@ -109,17 +122,21 @@ bool BindingTimeAnalysis::updateStage(const Value *V, unsigned Stage) {
 
 // Verify incoming stage for instruction.
 void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
-  if (auto *I = dyn_cast<CallInst>(U.getUser())) {
-    Function *Callee = I->getCalledFunction();
+  if (auto *C = dyn_cast<CallInst>(U.getUser())) {
+    Function *Callee = C->getCalledFunction();
+    Argument *A = nullptr;
 
-    if (Callee && Callee->isStaged() &&
-        Callee->getParamStage(U.getOperandNo()) < IncomingStage) {
+    if (U.getOperandNo() < Callee->arg_size()) {
+      A = &Callee->arg_begin()[U.getOperandNo()];
+    }
+
+    if (Callee && Callee->isStaged() && A && A->getStage() < IncomingStage) {
       U->getContext().diagnose(DiagnosticInfoBindingTime(
           DS_Error,
           "Inferred argument stage(" + Twine(IncomingStage) +
-              ") contradicts the declared parameter stage of @" +
-              Callee->getName(),
-          I));
+              ") contradicts the declared parameter stage(" +
+              Twine(A->getStage()) + ") of @" + Callee->getName(),
+          {A, U, C}));
     }
   }
 
@@ -135,19 +152,20 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
           "Inferred " + OpName + " stage(" + Twine(IncomingStage) +
               ") contradicts the object stage(" + Twine(ObjectStage) +
               ") at store",
-          S));
+          {U, getObjectStageAnnotation(S->getPointerOperand()), S}));
     }
   }
 
-  if (auto *I = dyn_cast<ReturnInst>(U.getUser())) {
-    Function *F = I->getFunction();
+  if (auto *R = dyn_cast<ReturnInst>(U.getUser())) {
+    Function *F = R->getFunction();
 
     if (F->getReturnStage() < IncomingStage) {
       F->getContext().diagnose(DiagnosticInfoBindingTime(
           DS_Error,
           "Inferred stage(" + Twine(IncomingStage) +
-              ") contradicts the declared return stage of @" + F->getName(),
-          I));
+              ") contradicts the declared return stage(" +
+              Twine(F->getReturnStage()) + ") of @" + F->getName(),
+          R));
     }
   }
 }
@@ -232,10 +250,9 @@ void BindingTimeAnalysis::initializeWorklist() {
       if (isLastStage(&I)) {
         enqueue(&I, F->getLastStage(), WorklistItem::LastStage);
       } else if (auto *Call = dyn_cast<CallInst>(&I)) {
-        auto *Intr = dyn_cast<IntrinsicInst>(Call);
         Function *Callee = Call->getCalledFunction();
 
-        if (Intr && Intr->getIntrinsicID() == Intrinsic::object_stage) {
+        if (getObjectStageAnnotation(Call)) {
           enqueue(&I, 0, WorklistItem::Default);
         } else if (Callee && Callee->isStaged() &&
                    !Callee->getReturnType()->isVoidTy()) {
@@ -303,12 +320,12 @@ void BindingTimeAnalysis::fixTerminators() {
 
         F->getContext().diagnose(DiagnosticInfoBindingTime(
             DS_Warning,
-            "Multiple stage(" + Twine(Stage) + ") terminators of %" +
-                SourceBB.getName(),
-            Term));
+            "Multiple stage(" + Twine(Stage) + ") terminators of " +
+                (SourceBB.hasName() ? Twine("%") + SourceBB.getName()
+                                    : "the entry block"),
+            {Term, T}));
         F->getContext().diagnose(DiagnosticInfoBindingTime(
-            DS_Note,
-            "The other terminator is moved to stage(" + Twine(Stage + 1) + ")",
+            DS_Note, "Terminator is moved to stage(" + Twine(Stage + 1) + ")",
             T));
       }
     }
@@ -733,20 +750,37 @@ INITIALIZE_PASS_END(BindingTimeAnalysisPrinter, "print-bta",
 void DiagnosticInfoBindingTime::print(DiagnosticPrinter &DP) const {
   DP << Msg;
 
-  if (!I)
+  if (Vals.empty())
     return;
 
   std::string S;
   raw_string_ostream OS(S);
   formatted_raw_ostream FOS(OS);
 
-  FOS << ":\n" << *I;
-  FOS.PadToColumn(CommentColumn);
+  FOS << ':';
 
-  if (I->getParent()->hasName()) {
-    FOS << "; in %" << I->getParent()->getName();
-  } else {
-    FOS << "; in entry block";
+  for (auto *V : Vals) {
+    FOS << '\n';
+
+    if (auto *I = dyn_cast<Instruction>(V)) {
+      auto *B = I->getParent();
+
+      FOS << *V;
+      FOS.PadToColumn(CommentColumn);
+
+      if (B->hasName()) {
+        FOS << "; in %" << B->getName();
+      } else {
+        FOS << "; in entry block";
+      }
+    } else {
+      FOS << "  " << *V;
+
+      if (auto *A = dyn_cast<Argument>(V)) {
+        FOS.PadToColumn(CommentColumn)
+            << "; argument of @" << A->getParent()->getName();
+      }
+    }
   }
 
   FOS.flush();

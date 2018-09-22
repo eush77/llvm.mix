@@ -15,8 +15,10 @@
 #ifndef LLVM_ANALYSIS_BINDINGTIMEANALYSIS_H
 #define LLVM_ANALYSIS_BINDINGTIMEANALYSIS_H
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -25,6 +27,8 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Printable.h"
 
+#include <algorithm>
+#include <iterator>
 #include <queue>
 
 namespace llvm {
@@ -157,17 +161,19 @@ public:
   }
 
   DiagnosticInfoBindingTime(DiagnosticSeverity Severity, const Twine &Msg,
-                            const Instruction *I = nullptr)
-      : DiagnosticInfo(DK_BindingTime, Severity), Msg(Msg), I(I) {}
+                            ArrayRef<const Value *> Vals = {})
+      : DiagnosticInfo(DK_BindingTime, Severity), Msg(Msg) {
+    std::unique_copy(Vals.begin(), Vals.end(), std::back_inserter(this->Vals));
+  }
 
   const Twine &getMessage() const { return Msg; }
-  const Instruction *getInstruction() const { return I; }
+  ArrayRef<const Value *> getValues() const { return Vals; }
 
   void print(DiagnosticPrinter &DP) const override;
 
 private:
   const Twine &Msg;
-  const Instruction *I;
+  SmallVector<const Value *, 3> Vals;
 };
 
 } // end namespace llvm

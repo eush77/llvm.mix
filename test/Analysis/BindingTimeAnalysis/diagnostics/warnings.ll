@@ -1,11 +1,11 @@
 ; RUN: opt -disable-output -bta %s 2>&1 | FileCheck %s --implicit-check-not="{{[^ ]}}"
 
-; CHECK: warning: Multiple stage(0) terminators of %entry:
+; CHECK: warning: Multiple stage(0) terminators of the entry block:
 ; CHECK: br label %exit  ; in %left
-; CHECK: note: The other terminator is moved to stage(1):
+; CHECK: br label %exit  ; in %right
+; CHECK: note: Terminator is moved to stage(1):
 ; CHECK: br label %exit  ; in %right
 define i32 @manyterm(i1 stage(1) %x) stage(1) {
-entry:
   br i1 %x, label %left, label %right
 left:
   br label %exit
@@ -16,16 +16,19 @@ exit:
 }
 
 ; CHECK: warning: Multiple stage(0) terminators of %fork:
-; CHECK: ret i32 1  ; in %merge
-; CHECK: note: The other terminator is moved to stage(1):
+; CHECK: ret i32 1      ; in %merge
+; CHECK: br label %id1  ; in %id
+; CHECK: note: Terminator is moved to stage(1):
 ; CHECK: br label %id1  ; in %id
 ; CHECK: warning: Multiple stage(1) terminators of %fork1:
-; CHECK: br label %id1  ; in %id
-; CHECK: note: The other terminator is moved to stage(2):
+; CHECK: br label %id1    ; in %id
+; CHECK: br label %merge  ; in %merge1
+; CHECK: note: Terminator is moved to stage(2):
 ; CHECK: br label %merge  ; in %merge1
 ; CHECK: warning: Multiple stage(1) terminators of %fork:
-; CHECK: ret i32 1  ; in %merge
-; CHECK: note: The other terminator is moved to stage(2):
+; CHECK: ret i32 1      ; in %merge
+; CHECK: br label %id1  ; in %id
+; CHECK: note: Terminator is moved to stage(2):
 ; CHECK: br label %id1  ; in %id
 define i32 @manyterm1(i1 stage(1) %x1, i1 stage(2) %x2) stage(2) {
 fork:
