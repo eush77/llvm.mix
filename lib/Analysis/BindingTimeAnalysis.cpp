@@ -60,16 +60,17 @@ using namespace llvm;
 
 #define DEBUG_TYPE "bta"
 
-// Get the earliest stage at which the pointed object is constant.
+// Get the earliest stage at which the pointed object is constant. If it is
+// not constant at any stage, return `LastStage + 1'.
 unsigned BindingTimeAnalysis::getObjectStage(const Value *V) const {
   if (auto *I = dyn_cast<IntrinsicInst>(V)) {
     if (I->getIntrinsicID() == Intrinsic::object_stage) {
       return std::min<unsigned>(
           cast<ConstantInt>(I->getOperand(1))->getZExtValue(),
-          F->getLastStage());
+          F->getLastStage() + 1);
     }
   }
-  return F->getLastStage();
+  return F->getLastStage() + 1;
 }
 
 // True if the instruction must be evaluated at the last stage.
@@ -230,7 +231,9 @@ void BindingTimeAnalysis::initializeWorklist() {
           enqueue(&I, F->getLastStage(), WorklistItem::LastStage);
         }
       } else if (auto *Load = dyn_cast<LoadInst>(&I)) {
-        enqueue(&I, getObjectStage(Load->getPointerOperand()),
+        enqueue(&I,
+                std::min(getObjectStage(Load->getPointerOperand()),
+                         F->getLastStage()),
                 WorklistItem::ObjectStage);
       } else if (isa<ReturnInst>(I)) {
         enqueue(&I, F->getReturnStage(), WorklistItem::ReturnStage);
