@@ -3825,11 +3825,15 @@ LValue CodeGenFunction::EmitLValueForField(LValue base,
     // For structs, we GEP to the field that the record layout suggests.
     addr = emitAddrOfFieldStorage(*this, addr, field);
 
+    // Annotate pointer with object stage.
     if (CurFuncDecl->hasAttr<StageAttr>()) {
       if (auto *SA = field->getAttr<StageAttr>()) {
-        Builder.CreateCall(
-            CGM.getIntrinsic(llvm::Intrinsic::object_stage, addr.getType()),
-            {addr.getPointer(), Builder.getInt32(SA->getStage())});
+        addr = {
+            Builder.CreateCall(
+                CGM.getIntrinsic(llvm::Intrinsic::object_stage, addr.getType()),
+                {addr.getPointer(), Builder.getInt32(SA->getStage())},
+                addr.getName()),
+            addr.getAlignment()};
       }
     }
 
