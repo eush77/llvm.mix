@@ -37,6 +37,7 @@ class PHINode;
 class raw_ostream;
 class TerminatorInst;
 class Twine;
+class Use;
 class Value;
 
 class BindingTimeAnalysis : public FunctionPass {
@@ -64,6 +65,7 @@ private:
   unsigned getObjectStage(const Value *V) const;
   bool isLastStage(const Instruction *I) const;
   bool updateStage(const Value *V, unsigned Stage);
+  void verifyUse(const Use &U, unsigned IncomingStage);
   void addTransitiveNonPhiUsers(const Value *V, unsigned IncomingStage);
 
   void fixArgument(const Argument *A, unsigned Stage);

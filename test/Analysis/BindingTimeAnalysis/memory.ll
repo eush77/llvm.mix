@@ -43,9 +43,9 @@ define void @store1(i32* %p, i32 stage(1) %x) stage(2) {
 }
 
 ; CHECK-LABEL: define {{.*}} @store2
-define void @store2(i32* %p, i32 stage(1) %x) stage(2) {
+define void @store2(i32* %p, i32 %x, i32 stage(1) %dummy) stage(2) {
 ; CHECK-NEXT: stage(0)
-  %p1 = call i32* @llvm.object.stage.p0i32(i32* %p, i32 1) ; CHECK-NEXT: stage(0)
-  store i32 %x, i32* %p1                            ; CHECK-NEXT: stage(1)
+  %p1 = call i32* @llvm.object.stage.p0i32(i32* %p, i32 3) ; CHECK-NEXT: stage(0)
+  store i32 %x, i32* %p1                            ; CHECK-NEXT: stage(2)
   ret void                                          ; CHECK-NEXT: stage(2)
 }

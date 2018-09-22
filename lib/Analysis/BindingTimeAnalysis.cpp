@@ -107,9 +107,8 @@ bool BindingTimeAnalysis::updateStage(const Value *V, unsigned Stage) {
   return true;
 }
 
-namespace {
-
-void verifyUse(const Use &U, unsigned IncomingStage) {
+// Verify incoming stage for instruction.
+void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
   if (auto *I = dyn_cast<CallInst>(U.getUser())) {
     Function *Callee = I->getCalledFunction();
 
@@ -121,6 +120,22 @@ void verifyUse(const Use &U, unsigned IncomingStage) {
               ") contradicts the declared parameter stage of @" +
               Callee->getName(),
           I));
+    }
+  }
+
+  if (auto *S = dyn_cast<StoreInst>(U.getUser())) {
+    unsigned ObjectStage = getObjectStage(S->getPointerOperand());
+    StringRef OpName = U.getOperandNo() == StoreInst::getPointerOperandIndex()
+                           ? "pointer"
+                           : "value";
+
+    if (ObjectStage <= IncomingStage) {
+      U->getContext().diagnose(DiagnosticInfoBindingTime(
+          DS_Error,
+          "Inferred " + OpName + " stage(" + Twine(IncomingStage) +
+              ") contradicts the object stage(" + Twine(ObjectStage) +
+              ") at store",
+          S));
     }
   }
 
@@ -136,8 +151,6 @@ void verifyUse(const Use &U, unsigned IncomingStage) {
     }
   }
 }
-
-} // namespace
 
 // Add transitive non-phi users of a value to the worklist with a given
 // incoming stage value.
