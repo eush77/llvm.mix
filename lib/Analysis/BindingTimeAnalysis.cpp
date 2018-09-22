@@ -13,7 +13,9 @@
 
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -54,6 +56,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <tuple>
 #include <utility>
 
 using namespace llvm;
@@ -133,10 +136,10 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
     if (Callee && Callee->isStaged() && A && A->getStage() < IncomingStage) {
       U->getContext().diagnose(DiagnosticInfoBindingTime(
           DS_Error,
-          "Inferred argument stage(" + Twine(IncomingStage) +
-              ") contradicts the declared parameter stage(" +
-              Twine(A->getStage()) + ") of @" + Callee->getName(),
-          {A, U, C}));
+          "Inferred argument stage contradicts the declared parameter stage of "
+          "@" +
+              Callee->getName(),
+          {{A, A->getStage()}, {U, IncomingStage}, {C, None}}));
     }
   }
 
@@ -149,10 +152,10 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
     if (ObjectStage <= IncomingStage) {
       U->getContext().diagnose(DiagnosticInfoBindingTime(
           DS_Error,
-          "Inferred " + OpName + " stage(" + Twine(IncomingStage) +
-              ") contradicts the object stage(" + Twine(ObjectStage) +
-              ") at store",
-          {U, getObjectStageAnnotation(S->getPointerOperand()), S}));
+          "Inferred " + OpName + " stage contradicts the object stage at store",
+          {{U, IncomingStage},
+           {getObjectStageAnnotation(S->getPointerOperand()), None},
+           {S, None}}));
     }
   }
 
@@ -162,10 +165,9 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
     if (F->getReturnStage() < IncomingStage) {
       F->getContext().diagnose(DiagnosticInfoBindingTime(
           DS_Error,
-          "Inferred stage(" + Twine(IncomingStage) +
-              ") contradicts the declared return stage(" +
+          "Inferred stage contradicts the declared return stage(" +
               Twine(F->getReturnStage()) + ") of @" + F->getName(),
-          R));
+          {{R, IncomingStage}}));
     }
   }
 }
@@ -321,12 +323,12 @@ void BindingTimeAnalysis::fixTerminators() {
         F->getContext().diagnose(DiagnosticInfoBindingTime(
             DS_Warning,
             "Multiple stage(" + Twine(Stage) + ") terminators of " +
-                (SourceBB.hasName() ? Twine("%") + SourceBB.getName()
+                (SourceBB.hasName() ? "%" + SourceBB.getName()
                                     : "the entry block"),
-            {Term, T}));
+            {{Term, getStage(Term)}, {T, getStage(T)}}));
         F->getContext().diagnose(DiagnosticInfoBindingTime(
             DS_Note, "Terminator is moved to stage(" + Twine(Stage + 1) + ")",
-            T));
+            {{T, None}}));
       }
     }
   }
@@ -747,6 +749,37 @@ INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
 INITIALIZE_PASS_END(BindingTimeAnalysisPrinter, "print-bta",
                     "Binding-Time Analysis Printer", false, true)
 
+DiagnosticInfoBindingTime::DiagnosticInfoBindingTime(
+    DiagnosticSeverity Severity, const Twine &Msg,
+    ArrayRef<std::pair<const Value *, Optional<unsigned>>> Vals)
+    : DiagnosticInfo(DK_BindingTime, Severity), Msg(Msg) {
+  if (Vals.empty())
+    return;
+
+  this->Vals.push_back(Vals.front());
+
+  // Merge duplicated values.
+  for (auto &P : Vals.drop_front()) {
+    const Value *V;
+    Optional<unsigned> Stage;
+    std::tie(V, Stage) = P;
+
+    const Value *BackV = this->Vals.back().first;
+    Optional<unsigned> &BackStage = this->Vals.back().second;
+
+    if (V == BackV) {
+      assert((!Stage || !BackStage || Stage == BackStage) &&
+             "Conflicting stages for the same context value");
+
+      if (!BackStage) {
+        BackStage = Stage;
+      }
+    } else {
+      this->Vals.push_back(P);
+    }
+  }
+}
+
 void DiagnosticInfoBindingTime::print(DiagnosticPrinter &DP) const {
   DP << Msg;
 
@@ -759,27 +792,44 @@ void DiagnosticInfoBindingTime::print(DiagnosticPrinter &DP) const {
 
   FOS << ':';
 
-  for (auto *V : Vals) {
+  for (auto &P : Vals) {
+    const Value *V;
+    Optional<unsigned> Stage;
+    std::tie(V, Stage) = P;
+
     FOS << '\n';
 
+    // Non-instruction values need some padding.
+    if (!isa<Instruction>(V)) {
+      FOS << "  ";
+    }
+
+    FOS << *V;
+
+    auto annotate = [&FOS, StartComment = true]() mutable -> raw_ostream & {
+      if (StartComment) {
+        StartComment = false;
+        return FOS.PadToColumn(CommentColumn) << "; ";
+      } else {
+        return FOS << ", ";
+      }
+    };
+
+    if (Stage) {
+      annotate() << "stage(" << *Stage << ')';
+    }
+
+    // Print additional info.
     if (auto *I = dyn_cast<Instruction>(V)) {
       auto *B = I->getParent();
 
-      FOS << *V;
-      FOS.PadToColumn(CommentColumn);
-
       if (B->hasName()) {
-        FOS << "; in %" << B->getName();
+        annotate() << "in %" << B->getName();
       } else {
-        FOS << "; in entry block";
+        annotate() << "in entry block";
       }
-    } else {
-      FOS << "  " << *V;
-
-      if (auto *A = dyn_cast<Argument>(V)) {
-        FOS.PadToColumn(CommentColumn)
-            << "; argument of @" << A->getParent()->getName();
-      }
+    } else if (auto *A = dyn_cast<Argument>(V)) {
+      annotate() << "argument of @" << A->getParent()->getName();
     }
   }
 

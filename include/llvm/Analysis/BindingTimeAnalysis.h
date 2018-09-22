@@ -27,9 +27,8 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Printable.h"
 
-#include <algorithm>
-#include <iterator>
 #include <queue>
+#include <utility>
 
 namespace llvm {
 
@@ -160,20 +159,22 @@ public:
     return DI->getKind() == DK_BindingTime;
   }
 
-  DiagnosticInfoBindingTime(DiagnosticSeverity Severity, const Twine &Msg,
-                            ArrayRef<const Value *> Vals = {})
-      : DiagnosticInfo(DK_BindingTime, Severity), Msg(Msg) {
-    std::unique_copy(Vals.begin(), Vals.end(), std::back_inserter(this->Vals));
-  }
+  DiagnosticInfoBindingTime(
+      DiagnosticSeverity Severity, const Twine &Msg,
+      ArrayRef<std::pair<const Value *, Optional<unsigned>>> Vals = {});
 
   const Twine &getMessage() const { return Msg; }
-  ArrayRef<const Value *> getValues() const { return Vals; }
+
+  // Get context values annotated with optional stage numbers.
+  ArrayRef<std::pair<const Value *, Optional<unsigned>>> getValues() const {
+    return Vals;
+  }
 
   void print(DiagnosticPrinter &DP) const override;
 
 private:
   const Twine &Msg;
-  SmallVector<const Value *, 3> Vals;
+  SmallVector<std::pair<const Value *, Optional<unsigned>>, 3> Vals;
 };
 
 } // end namespace llvm
