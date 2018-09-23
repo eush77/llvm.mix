@@ -13,11 +13,11 @@
 
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/Argument.h"
@@ -37,6 +37,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Use.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Pass.h"
@@ -45,6 +46,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/Printable.h"
 #include "llvm/Support/raw_ostream.h"
@@ -56,7 +58,6 @@
 #include <memory>
 #include <numeric>
 #include <string>
-#include <tuple>
 #include <utility>
 
 using namespace llvm;
@@ -125,6 +126,8 @@ bool BindingTimeAnalysis::updateStage(const Value *V, unsigned Stage) {
 
 // Verify incoming stage for instruction.
 void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
+  LLVMContext &Ctx = U->getContext();
+
   if (auto *C = dyn_cast<CallInst>(U.getUser())) {
     Function *Callee = C->getCalledFunction();
     Argument *A = nullptr;
@@ -134,12 +137,15 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
     }
 
     if (Callee && Callee->isStaged() && A && A->getStage() < IncomingStage) {
-      U->getContext().diagnose(DiagnosticInfoBindingTime(
-          DS_Error,
-          "Inferred argument stage contradicts the declared parameter stage of "
-          "@" +
-              Callee->getName(),
-          {{A, A->getStage()}, {U, IncomingStage}, {C, None}}));
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Note, *Callee, "Given the declared parameter %s of %s", A,
+          A->getStage()));
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Note, *F, "Given the argument %s of %s", U, IncomingStage));
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Error, *F,
+          "Inferred argument stage contradicts the declared parameter stage",
+          C));
     }
   }
 
@@ -150,12 +156,17 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
                            : "value";
 
     if (ObjectStage <= IncomingStage) {
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Note, *F,
+          "Given the declared object stage(" + Twine(ObjectStage) + ")",
+          getObjectStageAnnotation(S->getPointerOperand())));
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Note, *F, "Given the " + OpName + " operand %s of %s", U,
+          IncomingStage));
       U->getContext().diagnose(DiagnosticInfoBindingTime(
-          DS_Error,
+          DS_Error, *F,
           "Inferred " + OpName + " stage contradicts the object stage at store",
-          {{U, IncomingStage},
-           {getObjectStageAnnotation(S->getPointerOperand()), None},
-           {S, None}}));
+          S));
     }
   }
 
@@ -163,11 +174,13 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
     Function *F = R->getFunction();
 
     if (F->getReturnStage() < IncomingStage) {
-      F->getContext().diagnose(DiagnosticInfoBindingTime(
-          DS_Error,
-          "Inferred stage contradicts the declared return stage(" +
-              Twine(F->getReturnStage()) + ") of @" + F->getName(),
-          {{R, IncomingStage}}));
+      Ctx.diagnose(DiagnosticInfoBindingTime(DS_Note, *F,
+                                             "Given the declared return %0.s%s",
+                                             F, F->getReturnStage()));
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Error, *F,
+          "Inferred return %.0s%s contradicts the declared return stage", R,
+          IncomingStage));
     }
   }
 }
@@ -275,8 +288,10 @@ void BindingTimeAnalysis::initializeWorklist() {
 
         if (!ObjectStage) {
           I.getContext().diagnose(DiagnosticInfoBindingTime(
-              DS_Error, "Storing to a stage(0) object",
-              {{getObjectStageAnnotation(P), None}, {Store, None}}));
+              DS_Note, *F, "Given the declared object stage",
+              getObjectStageAnnotation(P)));
+          I.getContext().diagnose(DiagnosticInfoBindingTime(
+              DS_Error, *F, "Storing to a stage(0) object", Store));
         }
 
         enqueue(&I, ObjectStage - 1, WorklistItem::ObjectStage);
@@ -327,14 +342,15 @@ void BindingTimeAnalysis::fixTerminators() {
         DEBUG(continue);
 
         F->getContext().diagnose(DiagnosticInfoBindingTime(
-            DS_Warning,
+            DS_Warning, *F,
             "Multiple stage(" + Twine(Stage) + ") terminators of " +
-                (SourceBB.hasName() ? "%" + SourceBB.getName()
+                (SourceBB.hasName() ? "basic block %%" + SourceBB.getName()
                                     : "the entry block"),
-            {{Term, getStage(Term)}, {T, getStage(T)}}));
+            Term, getStage(Term)));
         F->getContext().diagnose(DiagnosticInfoBindingTime(
-            DS_Note, "Terminator is moved to stage(" + Twine(Stage + 1) + ")",
-            {{T, None}}));
+            DS_Note, *F,
+            "Previous terminator is moved to stage(" + Twine(Stage + 1) + ")",
+            T, getStage(T)));
       }
     }
   }
@@ -755,106 +771,76 @@ INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
 INITIALIZE_PASS_END(BindingTimeAnalysisPrinter, "print-bta",
                     "Binding-Time Analysis Printer", false, true)
 
-DiagnosticInfoBindingTime::DiagnosticInfoBindingTime(
-    DiagnosticSeverity Severity, const Twine &Msg,
-    ArrayRef<std::pair<const Value *, Optional<unsigned>>> Vals)
-    : DiagnosticInfo(DK_BindingTime, Severity), Msg(Msg) {
-  if (Vals.empty())
-    return;
+namespace {
 
-  this->Vals.push_back(Vals.front());
-
-  // Merge duplicated values.
-  for (auto &P : Vals.drop_front()) {
-    const Value *V;
-    Optional<unsigned> Stage;
-    std::tie(V, Stage) = P;
-
-    const Value *BackV = this->Vals.back().first;
-    Optional<unsigned> &BackStage = this->Vals.back().second;
-
-    if (V == BackV) {
-      assert((!Stage || !BackStage || Stage == BackStage) &&
-             "Conflicting stages for the same context value");
-
-      if (!BackStage) {
-        BackStage = Stage;
-      }
-    } else {
-      this->Vals.push_back(P);
-    }
+DiagnosticLocation getLocation(const Value *V) {
+  if (auto *A = dyn_cast<Argument>(V)) {
+    return A->getParent()->getSubprogram();
+  } else if (auto *F = dyn_cast<Function>(V)) {
+    return F->getSubprogram();
+  } else if (auto *I = dyn_cast<Instruction>(V)) {
+    return I->getDebugLoc();
   }
+  return {};
+}
+
+} // namespace
+
+DiagnosticInfoBindingTime::DiagnosticInfoBindingTime(
+    DiagnosticSeverity Severity, const Function &F, const Twine &Fmt,
+    const Value *V, Optional<unsigned> Stage)
+    : DiagnosticInfoWithLocationBase(DK_BindingTime, Severity, F,
+                                     ::getLocation(V)),
+      V(V), Stage(Stage) {
+  std::string ValStr;
+  raw_string_ostream ValOS(ValStr);
+  V->printAsOperand(ValOS, true, F.getParent());
+  ValOS.flush();
+
+  SmallString<9> StageStr;
+  if (Stage) {
+    ("stage(" + Twine(*Stage) + ")").toVector(StageStr);
+  }
+
+  raw_string_ostream(Msg) << format(Fmt.str().c_str(), ValStr.c_str(),
+                                    StageStr.c_str());
 }
 
 void DiagnosticInfoBindingTime::print(DiagnosticPrinter &DP) const {
-  DP << Msg;
+  if (isLocationAvailable()) {
+    DP << getLocationStr() << ": ";
+  }
 
-  if (Vals.empty())
+  DP << "in " << getFunction().getName() << ": " << Msg;
+
+  auto *I = dyn_cast<Instruction>(V);
+
+  if (!I)
     return;
+
+  DP << ":\n";
 
   std::string S;
   raw_string_ostream OS(S);
   formatted_raw_ostream FOS(OS);
 
-  FOS << ':';
+  FOS << *I;
 
-  SmallVector<std::string, 3> ValStrings;
-
-  // Print values to strings to infer the comment column for annotations.
-  for (auto &P : Vals) {
-    const Value *V;
-    std::tie(V, std::ignore) = P;
-
-    ValStrings.push_back({});
-    raw_string_ostream OS(ValStrings.back());
-
-    // Non-instruction values need some padding.
-    if (!isa<Instruction>(V)) {
-      OS << "  ";
+  auto annotate = [&, StartComment = true]() mutable -> raw_ostream & {
+    if (StartComment) {
+      StartComment = false;
+      return FOS.PadToColumn(CommentColumn) << "; ";
+    } else {
+      return FOS << ", ";
     }
+  };
 
-    OS << *V;
+  if (Stage) {
+    annotate() << "stage(" << *Stage << ')';
   }
 
-  // Column for annotation comments.
-  unsigned AnnColumn = std::accumulate(
-      ValStrings.begin(), ValStrings.end(), 0,
-      [](unsigned N, const std::string &S) {
-        return std::max(N, std::min<unsigned>(S.size() + 2, CommentColumn));
-      });
-
-  for (unsigned ValNum = 0; ValNum < Vals.size(); ++ValNum) {
-    const Value *V;
-    Optional<unsigned> Stage;
-    std::tie(V, Stage) = Vals[ValNum];
-
-    FOS << '\n' << ValStrings[ValNum];
-
-    auto annotate = [&, StartComment = true]() mutable -> raw_ostream & {
-      if (StartComment) {
-        StartComment = false;
-        return FOS.PadToColumn(AnnColumn) << "; ";
-      } else {
-        return FOS << ", ";
-      }
-    };
-
-    if (Stage) {
-      annotate() << "stage(" << *Stage << ')';
-    }
-
-    // Print additional info.
-    if (auto *I = dyn_cast<Instruction>(V)) {
-      auto *B = I->getParent();
-
-      if (B->hasName()) {
-        annotate() << "in %" << B->getName();
-      } else {
-        annotate() << "in entry block";
-      }
-    } else if (auto *A = dyn_cast<Argument>(V)) {
-      annotate() << "argument of @" << A->getParent()->getName();
-    }
+  if (I->getParent()->hasName()) {
+    annotate() << "in %" << I->getParent()->getName();
   }
 
   FOS.flush();

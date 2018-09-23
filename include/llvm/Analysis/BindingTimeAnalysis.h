@@ -15,10 +15,9 @@
 #ifndef LLVM_ANALYSIS_BINDINGTIMEANALYSIS_H
 #define LLVM_ANALYSIS_BINDINGTIMEANALYSIS_H
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -28,7 +27,7 @@
 #include "llvm/Support/Printable.h"
 
 #include <queue>
-#include <utility>
+#include <string>
 
 namespace llvm {
 
@@ -153,28 +152,30 @@ private:
   Optional<ModuleSlotTracker> MST;
 };
 
-class DiagnosticInfoBindingTime : public DiagnosticInfo {
+class DiagnosticInfoBindingTime : public DiagnosticInfoWithLocationBase {
 public:
   static bool classof(const DiagnosticInfo *DI) {
     return DI->getKind() == DK_BindingTime;
   }
 
-  DiagnosticInfoBindingTime(
-      DiagnosticSeverity Severity, const Twine &Msg,
-      ArrayRef<std::pair<const Value *, Optional<unsigned>>> Vals = {});
+  // Construct diagnosic from a format string, IR value, and optionally a
+  // stage number, with the first `%s' in the format string refering to the
+  // string representation of the IR value, and the second `%s' refering to
+  // the string representation of the stage.
+  DiagnosticInfoBindingTime(DiagnosticSeverity Severity, const Function &F,
+                            const Twine &Fmt, const Value *V,
+                            Optional<unsigned> Stage = None);
 
-  const Twine &getMessage() const { return Msg; }
-
-  // Get context values annotated with optional stage numbers.
-  ArrayRef<std::pair<const Value *, Optional<unsigned>>> getValues() const {
-    return Vals;
-  }
+  const std::string &getMessage() const { return Msg; }
+  const Value *getValue() const { return V; }
+  const Optional<unsigned> &getStage() const { return Stage; }
 
   void print(DiagnosticPrinter &DP) const override;
 
 private:
-  const Twine &Msg;
-  SmallVector<std::pair<const Value *, Optional<unsigned>>, 3> Vals;
+  std::string Msg;
+  const Value *V;
+  Optional<unsigned> Stage;
 };
 
 } // end namespace llvm
