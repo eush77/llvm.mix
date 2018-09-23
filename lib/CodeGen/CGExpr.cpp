@@ -3828,12 +3828,14 @@ LValue CodeGenFunction::EmitLValueForField(LValue base,
     // Annotate pointer with object stage.
     if (CurFuncDecl->hasAttr<StageAttr>()) {
       if (auto *SA = field->getAttr<StageAttr>()) {
-        addr = {
-            Builder.CreateCall(
-                CGM.getIntrinsic(llvm::Intrinsic::object_stage, addr.getType()),
-                {addr.getPointer(), Builder.getInt32(SA->getStage())},
-                addr.getName()),
-            addr.getAlignment()};
+        llvm::Instruction *AnnPointer = Builder.CreateCall(
+            CGM.getIntrinsic(llvm::Intrinsic::object_stage, addr.getType()),
+            {addr.getPointer(), Builder.getInt32(SA->getStage())},
+            addr.getName());
+
+        // Set the debug location to that of the attrubute.
+        AnnPointer->setDebugLoc(SourceLocToDebugLoc(SA->getLocation()));
+        addr = {AnnPointer, addr.getAlignment()};
       }
     }
 
