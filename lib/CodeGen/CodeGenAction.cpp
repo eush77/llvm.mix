@@ -289,9 +289,13 @@ namespace clang {
 
       EmbedBitcode(getModule(), CodeGenOpts, llvm::MemoryBufferRef());
 
+      BackendOptions BackendOpts;
+      BackendOpts.Mix = Gen->CGM().sawMix();
+
       EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
                         LangOpts, C.getTargetInfo().getDataLayout(),
-                        getModule(), Action, std::move(AsmOutStream));
+                        getModule(), Action, BackendOpts,
+                        std::move(AsmOutStream));
 
       Ctx.setInlineAsmDiagnosticHandler(OldHandler, OldContext);
 
@@ -1022,7 +1026,7 @@ void CodeGenAction::ExecuteAction() {
 
     EmitBackendOutput(CI.getDiagnostics(), CI.getHeaderSearchOpts(),
                       CI.getCodeGenOpts(), TargetOpts, CI.getLangOpts(),
-                      CI.getTarget().getDataLayout(), TheModule.get(), BA,
+                      CI.getTarget().getDataLayout(), TheModule.get(), BA, {},
                       std::move(OS));
     return;
   }

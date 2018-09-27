@@ -428,6 +428,9 @@ private:
   /// have been emitted.
   llvm::SmallPtrSet<clang::Module *, 16> EmittedModuleInitializers;
 
+  /// \brief Whether we processed a Mix attribute during CodeGen.
+  bool SawMix;
+
   /// \brief A vector of metadata strings.
   SmallVector<llvm::MDNode *, 16> LinkerOptionsMetadata;
 
@@ -1219,6 +1222,9 @@ public:
 
   /// Create and attach type metadata to the given function.
   void CreateFunctionTypeMetadata(const FunctionDecl *FD, llvm::Function *F);
+
+  /// Returns whether this module contains declaration with a Mix attribute.
+  bool sawMix() const { return SawMix; }
 
   /// Returns whether this module needs the "all-vtables" type identifier.
   bool NeedAllVtablesTypeId() const;

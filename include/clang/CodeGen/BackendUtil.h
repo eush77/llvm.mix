@@ -37,11 +37,16 @@ namespace clang {
     Backend_EmitObj        ///< Emit native object files
   };
 
+  struct BackendOptions {
+    /// Add Mix pass to the pipeline
+    bool Mix = false;
+  };
+
   void EmitBackendOutput(DiagnosticsEngine &Diags, const HeaderSearchOptions &,
                          const CodeGenOptions &CGOpts,
                          const TargetOptions &TOpts, const LangOptions &LOpts,
                          const llvm::DataLayout &TDesc, llvm::Module *M,
-                         BackendAction Action,
+                         BackendAction Action, const BackendOptions &BOpts,
                          std::unique_ptr<raw_pwrite_stream> OS);
 
   void EmbedBitcode(llvm::Module *M, const CodeGenOptions &CGOpts,

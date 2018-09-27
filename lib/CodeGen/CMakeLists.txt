@@ -12,6 +12,7 @@ set(LLVM_LINK_COMPONENTS
   LTO
   Linker
   MC
+  Mix
   ObjCARCOpts
   Object
   Passes

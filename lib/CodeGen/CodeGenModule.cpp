@@ -3285,6 +3285,8 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD,
     AddGlobalDtor(Fn, DA->getPriority());
   if (D->hasAttr<AnnotateAttr>())
     AddGlobalAnnotations(D, Fn);
+
+  SawMix |= D->isMixSpecializerDeclaration();
 }
 
 void CodeGenModule::EmitAliasDefinition(GlobalDecl GD) {
