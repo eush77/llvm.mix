@@ -21,6 +21,7 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/BindingTimeAnalysis.h"
 #include "llvm/Analysis/CallGraph.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -40,6 +41,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/Pass.h"
 #include "llvm/PassAnalysisSupport.h"
+#include "llvm/PassRegistry.h"
 #include "llvm/PassSupport.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
@@ -63,7 +65,9 @@ class Mix : public ModulePass {
 public:
   static char ID;
 
-  Mix() : ModulePass(ID) {}
+  Mix() : ModulePass(ID) {
+    initializeMixPass(*PassRegistry::getPassRegistry());
+  }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<BindingTimeAnalysis>();
