@@ -443,6 +443,46 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
          ConstantInt::get(SM.getUnsignedIntTy(), PT->getAddressSpace())});
     break;
   }
+
+  case Type::StructTyID: {
+    auto *ST = cast<StructType>(Ty);
+    Value *Elements;
+
+    if (ST->getNumElements()) {
+      Elements =
+          B.CreateAlloca(SM.getTypePtrTy(), B.getInt32(ST->getNumElements()));
+
+      for (unsigned ElNum = 0; ElNum < ST->getNumElements(); ++ElNum) {
+        B.CreateStore(stage(ST->getElementType(ElNum)),
+                      B.CreateGEP(Elements, B.getInt32(ElNum)));
+      }
+    } else {
+      Elements =
+          ConstantPointerNull::get(PointerType::getUnqual(SM.getTypePtrTy()));
+    }
+
+    if (ST->hasName()) {
+      StagedTy = B.CreateCall(SM.getStructCreateNamedFn(),
+                              {SM.Context, stage(ST->getName())});
+
+      if (!ST->isOpaque()) {
+        B.CreateCall(
+            SM.getStructSetBodyFn(),
+            {StagedTy, Elements,
+             ConstantInt::get(SM.getUnsignedIntTy(), ST->getNumElements()),
+             ConstantInt::get(SM.getBoolTy(), ST->isPacked())},
+            InstName);
+      }
+    } else {
+      StagedTy = B.CreateCall(
+          SM.getStructTypeInContextFn(),
+          {SM.Context, Elements,
+           ConstantInt::get(SM.getUnsignedIntTy(), ST->getNumElements()),
+           ConstantInt::get(SM.getBoolTy(), ST->isPacked())},
+          InstName);
+    }
+    break;
+  }
   }
 
   assert(StagedTy && "Unsupported type");
@@ -894,6 +934,31 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
                                     ConstantInt::get(SM.getBoolTy(), false)}),
                       stage(Ty)},
                      StaticV->getName());
+    break;
+  }
+
+  case Type::StructTyID: {
+    StructType *ST = cast<StructType>(StaticV->getType());
+    Value *Elements;
+
+    if (ST->getNumElements()) {
+      Elements =
+          B.CreateAlloca(SM.getValuePtrTy(), B.getInt32(ST->getNumElements()));
+
+      for (unsigned ElNum = 0; ElNum < ST->getNumElements(); ++ElNum) {
+        B.CreateStore(stageStatic(B.CreateExtractValue(StaticV, ElNum)),
+                      B.CreateGEP(Elements, B.getInt32(ElNum)));
+      }
+    } else {
+      Elements =
+          ConstantPointerNull::get(PointerType::getUnqual(SM.getValuePtrTy()));
+    }
+
+    StagedV = B.CreateCall(
+        SM.getConstStructInContextFn(),
+        {SM.Context, Elements,
+         ConstantInt::get(SM.getUnsignedIntTy(), ST->getNumElements()),
+         ConstantInt::get(SM.getBoolTy(), ST->isPacked())});
     break;
   }
   }

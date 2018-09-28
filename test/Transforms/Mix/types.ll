@@ -95,6 +95,67 @@ define void @fp128.mix(i8* %context) {
   ret void
 }
 
+%opaque = type opaque
+
+; CHECK-LABEL: define %opaque* @struct.opaque()
+; CHECK-STAGE-LABEL: source_filename = "struct.opaque.module"
+; CHECK-STAGE: %opaque = type opaque
+; CHECK-STAGE: define %opaque* @struct.opaque()
+define %opaque* @struct.opaque() stage(1) {
+  ; CHECK-STAGE: ret %opaque* null
+  ret %opaque* null
+}
+
+; CHECK-LABEL: define void @struct.opaque.mix
+define void @struct.opaque.mix(i8* %context) {
+  %struct.opaque = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (%opaque* ()* @struct.opaque to i8*), i8* %context)
+  %module = call i8* @LLVMGetGlobalParent(i8* %struct.opaque)
+  call void @LLVMDumpModule(i8* %module)
+  ret void
+}
+
+; CHECK-LABEL: define {} @struct.empty()
+; CHECK-STAGE-LABEL: define {} @struct.empty()
+define {} @struct.empty() stage(1) {
+  ; CHECK-STAGE: ret {} zeroinitializer
+  ret {} {}
+}
+
+; CHECK-LABEL: define void @struct.empty.mix
+define void @struct.empty.mix(i8* %context) {
+  %struct.empty = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast ({} ()* @struct.empty to i8*), i8* %context)
+  call void @LLVMDumpValue(i8* %struct.empty)
+  ret void
+}
+
+; CHECK-LABEL: define { i32, i32 } @struct.literal()
+; CHECK-STAGE-LABEL: define { i32, i32 } @struct.literal()
+define { i32, i32 } @struct.literal() stage(1) {
+  ; CHECK-STAGE: ret { i32, i32 } { i32 1, i32 2 }
+  ret { i32, i32 } { i32 1, i32 2 }
+}
+
+; CHECK-LABEL: define void @struct.literal.mix
+define void @struct.literal.mix(i8* %context) {
+  %struct.literal = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast ({ i32, i32 } ()* @struct.literal to i8*), i8* %context)
+  call void @LLVMDumpValue(i8* %struct.literal)
+  ret void
+}
+
+; CHECK-LABEL: define <{ i32, i32 }> @struct.packed()
+; CHECK-STAGE-LABEL: define <{ i32, i32 }> @struct.packed()
+define <{ i32, i32 }> @struct.packed() stage(1) {
+  ; CHECK-STAGE: ret <{ i32, i32 }> <{ i32 1, i32 2 }>
+  ret <{ i32, i32 }> <{ i32 1, i32 2 }>
+}
+
+; CHECK-LABEL: define void @struct.packed.mix
+define void @struct.packed.mix(i8* %context) {
+  %struct.packed = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (<{ i32, i32 }> ()* @struct.packed to i8*), i8* %context)
+  call void @LLVMDumpValue(i8* %struct.packed)
+  ret void
+}
+
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
@@ -104,6 +165,10 @@ define void @main() {
   call void @half.mix(i8* %c)
   call void @double.mix(i8* %c)
   call void @fp128.mix(i8* %c)
+  call void @struct.opaque.mix(i8* %c)
+  call void @struct.empty.mix(i8* %c)
+  call void @struct.literal.mix(i8* %c)
+  call void @struct.packed.mix(i8* %c)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
@@ -111,4 +176,6 @@ define void @main() {
 declare i8* @llvm.mix.ir(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
+declare void @LLVMDumpModule(i8*)
 declare void @LLVMDumpValue(i8*)
+declare i8* @LLVMGetGlobalParent(i8*)
