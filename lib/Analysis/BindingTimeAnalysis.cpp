@@ -395,6 +395,8 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
 
   // Reset previous state for this function.
   WorklistID = 0;
+  std::for_each(F.arg_begin(), F.arg_end(),
+                [&](auto &V) { StageMap.erase(&V); });
   std::for_each(F.begin(), F.end(), [&](auto &V) { StageMap.erase(&V); });
   std::for_each(inst_begin(F), inst_end(F),
                 [&](auto &V) { StageMap.erase(&V); });
