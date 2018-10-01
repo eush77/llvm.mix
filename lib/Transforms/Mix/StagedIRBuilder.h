@@ -954,11 +954,18 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
           ConstantPointerNull::get(PointerType::getUnqual(SM.getValuePtrTy()));
     }
 
-    StagedV = B.CreateCall(
-        SM.getConstStructInContextFn(),
-        {SM.Context, Elements,
-         ConstantInt::get(SM.getUnsignedIntTy(), ST->getNumElements()),
-         ConstantInt::get(SM.getBoolTy(), ST->isPacked())});
+    if (ST->hasName()) {
+      StagedV = B.CreateCall(
+          SM.getConstNamedStructFn(),
+          {stage(ST), Elements,
+           ConstantInt::get(SM.getUnsignedIntTy(), ST->getNumElements())});
+    } else {
+      StagedV = B.CreateCall(
+          SM.getConstStructInContextFn(),
+          {SM.Context, Elements,
+           ConstantInt::get(SM.getUnsignedIntTy(), ST->getNumElements()),
+           ConstantInt::get(SM.getBoolTy(), ST->isPacked())});
+    }
     break;
   }
   }

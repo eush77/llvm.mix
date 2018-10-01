@@ -156,6 +156,25 @@ define void @struct.packed.mix(i8* %context) {
   ret void
 }
 
+%struct = type { i32, i32 }
+
+; CHECK-LABEL: define %struct @struct.named()
+; CHECK-STAGE-LABEL: source_filename = "struct.named.module"
+; CHECK-STAGE: %struct = type  { i32, i32 }
+; CHECK-STAGE: define %struct @struct.named()
+define %struct @struct.named() stage(1) {
+  ; CHECK-STAGE: ret %struct { i32 1, i32 2 }
+  ret %struct { i32 1, i32 2 }
+}
+
+; CHECK-LABEL: define void @struct.named.mix
+define void @struct.named.mix(i8* %context) {
+  %struct.named = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (%struct ()* @struct.named to i8*), i8* %context)
+  %module = call i8* @LLVMGetGlobalParent(i8* %struct.named)
+  call void @LLVMDumpModule(i8* %module)
+  ret void
+}
+
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
@@ -169,6 +188,7 @@ define void @main() {
   call void @struct.empty.mix(i8* %c)
   call void @struct.literal.mix(i8* %c)
   call void @struct.packed.mix(i8* %c)
+  call void @struct.named.mix(i8* %c)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }

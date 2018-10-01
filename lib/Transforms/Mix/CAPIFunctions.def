@@ -60,6 +60,8 @@ HANDLE_API_FUNCTION(ConstInt, IR_VALUE, IR_TYPE, ULLINT, LLVMBOOL)
 HANDLE_API_FUNCTION(ConstIntOfArbitraryPrecision, IR_VALUE, IR_TYPE, UINT,
                     ULLINT->getPointerTo())
 HANDLE_API_FUNCTION(ConstIntToPtr, IR_VALUE, IR_VALUE, IR_TYPE)
+HANDLE_API_FUNCTION(ConstNamedStruct, IR_VALUE, IR_TYPE,
+                    IR_VALUE->getPointerTo(), UINT)
 HANDLE_API_FUNCTION(ConstReal, IR_VALUE, IR_TYPE, DOUBLE)
 HANDLE_API_FUNCTION(ConstStructInContext, IR_VALUE, IR_CONTEXT,
                     IR_VALUE->getPointerTo(), UINT, LLVMBOOL)
