@@ -414,7 +414,7 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
   BindingTimeAnalysis &BTA = getAnalysis<BindingTimeAnalysis>(*MixedF);
   const CallGraphNode *MixedCGN = (*CG)[MixedF];
 
-  for (auto CGN = df_begin(MixedCGN); CGN != df_end(MixedCGN);) {
+  for (auto CGN = std::next(df_begin(MixedCGN)); CGN != df_end(MixedCGN);) {
     auto *F = CGN->getFunction();
 
     if (F && F->isStaged()) {
