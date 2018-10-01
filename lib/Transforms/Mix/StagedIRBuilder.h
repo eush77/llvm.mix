@@ -675,6 +675,11 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       break;
     }
 
+    case Instruction::Unreachable: {
+      setBuilderName("Unreachable");
+      break;
+    }
+
     default:
       llvm_unreachable("Unsupported instruction");
     }
