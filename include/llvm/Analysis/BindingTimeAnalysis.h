@@ -117,7 +117,7 @@ private:
     // earlier.
     bool operator<(const WorklistItem &Other) const {
       return (InStage < Other.InStage) ||
-             (InStage == Other.InStage && ID > Other.InStage);
+             (InStage == Other.InStage && ID > Other.ID);
     }
 
     void print(raw_ostream &OS, BindingTimeAnalysis &BTA) const;
