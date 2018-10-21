@@ -54,6 +54,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -61,6 +62,7 @@
 #include <utility>
 
 using namespace llvm;
+using namespace std::placeholders;
 
 #define DEBUG_TYPE "bta"
 
@@ -456,6 +458,79 @@ Optional<BindingTimeAnalysis::WorklistItem> BindingTimeAnalysis::popItem() {
   Worklist.pop();
   return WI;
 }
+
+#ifndef NDEBUG
+
+namespace {
+
+template <typename Container> struct ForEach;
+
+template <typename T>
+struct ForEach<std::priority_queue<T>> : std::priority_queue<T> {
+  template <typename Func> ForEach(const std::priority_queue<T> &Q, Func &&F) {
+    std::for_each(static_cast<const ForEach &>(Q).c.begin(),
+                  static_cast<const ForEach &>(Q).c.end(),
+                  std::forward<Func>(F));
+  }
+};
+
+} // namespace
+
+void BindingTimeAnalysis::dumpWorklist() const {
+  dbgs() << "Worklist:\n";
+
+  ForEach<std::priority_queue<WorklistItem>>(
+      Worklist, std::bind(&BindingTimeAnalysis::WorklistItem::dump, _1));
+}
+
+#define FOR_EACH_WORKLIST_REASON_1(V, A)                                       \
+  V(A, Attribute)                                                              \
+  V(A, CallStage)                                                              \
+  V(A, Default)                                                                \
+  V(A, LastStage)                                                              \
+  V(A, ObjectStage)                                                            \
+  V(A, Operand)                                                                \
+  V(A, Parent)                                                                 \
+  V(A, PredTerminator)                                                         \
+  V(A, ReturnStage)                                                            \
+  V(A, StageTerminator)                                                        \
+  V(A, Successor)                                                              \
+  V(A, TransitiveOperand)
+
+#define CASE_STRINGIFY(S, R)                                                   \
+  case R:                                                                      \
+    S = #R;                                                                    \
+    break;
+
+void BindingTimeAnalysis::WorklistItem::dump() const {
+  auto dumpField = [&, Delim = "  "](const char *Field, auto &&V) mutable {
+    dbgs() << Delim << Field << "=" << V;
+    Delim = ", ";
+  };
+
+  auto dumpValueField = [&](const char *Field, const Value *V) {
+    if (V) {
+      dumpField(Field,
+                Printable([V](raw_ostream &OS) { V->printAsOperand(OS); }));
+    }
+  };
+
+  auto dumpReasonField = [&](const char *Field, Reason R) {
+    const char *S = "Unknown";
+    switch (R) { FOR_EACH_WORKLIST_REASON_1(CASE_STRINGIFY, S) }
+    dumpField(Field, S);
+  };
+
+  dumpField("ID", ID);
+  dumpValueField("V", V);
+  dumpField("InStage", InStage);
+  dumpReasonField("Reason", R);
+  dumpValueField("Sender", Sender);
+  dumpValueField("Arg", Arg);
+  dbgs() << '\n';
+}
+
+#endif // NDEBUG
 
 void BindingTimeAnalysis::WorklistItem::print(raw_ostream &OS,
                                               BindingTimeAnalysis &BTA) const {

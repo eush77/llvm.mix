@@ -24,6 +24,7 @@
 #include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Printable.h"
 
 #include <queue>
@@ -120,6 +121,7 @@ private:
     }
 
     void print(raw_ostream &OS, BindingTimeAnalysis &BTA) const;
+    LLVM_DUMP_METHOD void dump() const;
 
   private:
     unsigned ID;
@@ -134,6 +136,7 @@ private:
   void enqueue(const Value *V, unsigned IncomingStage, WorklistItem::Reason R,
                ArgsT... Args);
   Optional<WorklistItem> popItem();
+  LLVM_DUMP_METHOD void dumpWorklist() const;
 
   // Work list prioritizing higher-stage values over lower-stage values.
   std::priority_queue<WorklistItem> Worklist;
