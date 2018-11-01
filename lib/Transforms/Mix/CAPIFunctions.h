@@ -27,7 +27,7 @@ namespace mix {
 
 #define CONTEXT M.getContext()
 #define HANDLE_API_FUNCTION(Name, Result, ...)                                 \
-  Constant *get##Name##Fn(Module &M) {                                         \
+  inline Constant *get##Name##Fn(Module &M) {                                  \
     return M.getOrInsertFunction(                                              \
         "LLVM" #Name, FunctionType::get(Result, {__VA_ARGS__}, false));        \
   }
