@@ -15,14 +15,13 @@ define stage(1) i32 @f(i32 %n, i32 stage(1) %x) stage(1) {
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  ; CHECK: [[context:%.+]] = bitcast i8* %c to %struct.LLVMOpaqueContext*
-  ; CHECK: [[module:%.+]] = call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext({{.*}}, %struct.LLVMOpaqueContext* [[context]])
+  ; CHECK: call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext
   ; CHECK: [[param_types:%.+]] = alloca %struct.LLVMOpaqueType*
   ; CHECK: [[param_ptr:%.+]] = getelementptr %struct.LLVMOpaqueType*, %struct.LLVMOpaqueType** [[param_types]], i32 0
-  ; CHECK: [[i32:%.+]] = call %struct.LLVMOpaqueType* @LLVMInt32TypeInContext(%struct.LLVMOpaqueContext* [[context]])
+  ; CHECK: [[i32:%.+]] = call %struct.LLVMOpaqueType* @LLVMInt32TypeInContext
   ; CHECK: store %struct.LLVMOpaqueType* [[i32]], %struct.LLVMOpaqueType** [[param_ptr]]
   ; CHECK: [[function_type:%.+]] = call %struct.LLVMOpaqueType* @LLVMFunctionType(%struct.LLVMOpaqueType* [[i32]], %struct.LLVMOpaqueType** [[param_types]], i32 1, i32 0)
-  ; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction(%struct.LLVMOpaqueModule* [[module]], {{.*}}, %struct.LLVMOpaqueType* [[function_type]])
+  ; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction
   ; CHECK: %f = bitcast %struct.LLVMOpaqueValue* [[function]] to i8*
   %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32, i32)* @f to i8*), i8* %c, i32 4)
   call void @LLVMDumpValue(i8* %f)

@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MixContext.h"
 #include "StagedIRBuilder.h"
 #include "Types.h"
 
@@ -180,11 +181,11 @@ TerminatorInst *traverseDynamicBlocks(BasicBlock *Start, OutputIt Out,
 class MixFunction {
 public:
   template <typename ArgsT>
-  MixFunction(IRBuilder<> &B, StagedModule &SM, Function *F,
-              GlobalValue::LinkageTypes Linkage, ArgsT Args,
+  MixFunction(IRBuilder<> &B, MixContextTable &T, Value *TP, StagedModule &SM,
+              Function *F, GlobalValue::LinkageTypes Linkage, ArgsT Args,
               const BindingTimeAnalysis &BTA,
               BasicBlock *InsertBefore = nullptr)
-      : SB(B, SM), F(F), BTA(BTA) {
+      : C(T, TP), SB(B, C, SM), F(F), BTA(BTA) {
     buildFunction(Linkage, Args, InsertBefore);
   }
 
@@ -210,6 +211,7 @@ private:
 
   PHINode *StaticReturn = nullptr;
 
+  MixContext C;
   StagedIRBuilder<IRBuilder<>> SB;
   Function *F;
   const BindingTimeAnalysis &BTA;
@@ -335,7 +337,8 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
                 BasicBlock::Create(Parent->getContext(), Parent->getName(),
                                    Parent->getParent(), Parent->getNextNode());
 
-            MixFunction Mix(SB.getBuilder(), SB.getModule(), Callee,
+            MixFunction Mix(SB.getBuilder(), C.getTable(), C.getTablePointer(),
+                            SB.getModule(), Callee,
                             GlobalValue::InternalLinkage, StaticArgs, BTA,
                             Tail);
             BranchInst::Create(Mix.getEntry(), Parent);
@@ -431,25 +434,33 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
                << '\n'
                << I << "\n\n");
 
+  MixContextTable T;
+  StagedModule SM(I.getFunction());
   IRBuilder<> B(&I);
-  auto SM = StagedModule::build(B,
-                                B.CreateBitCast(I.getArgOperand(1),
-                                                getContextPtrTy(I.getContext()),
-                                                I.getArgOperand(1)->getName()),
-                                Twine(MixedF->getName(), ".module"));
+
+  // Create indirection by allocating a dummy context table and RAUWing it
+  // with the real context table at the end.
+  Instruction *TP = B.CreateAlloca(
+    MixContextTable::getTablePtrTy(I.getContext())->getElementType());
 
   // Split the call basic block.
   BasicBlock *Head = I.getParent();
   BasicBlock *Tail = Head->splitBasicBlock(&I, Head->getName());
 
-  MixFunction Mix(B, SM, MixedF, GlobalValue::ExternalLinkage,
+  MixFunction Mix(B, T, TP, SM, MixedF, GlobalValue::ExternalLinkage,
                   make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA,
                   Tail);
   cast<BranchInst>(Head->getTerminator())->setSuccessor(0, Mix.getEntry());
 
   B.SetInsertPoint(Mix.getExit());
-  SM.dispose(B);
+  MixContext(T, TP).dispose(B);
   B.CreateBr(Tail);
+
+  // Build context table allocation sequence.
+  B.SetInsertPoint(TP);
+  TP->replaceAllUsesWith(
+      T.build(B, I.getArgOperand(1), MixedF->getName().str() + ".module"));
+  TP->eraseFromParent();
 
   return new BitCastInst(Mix.getFunction(), I.getType(), "", &I);
 }
