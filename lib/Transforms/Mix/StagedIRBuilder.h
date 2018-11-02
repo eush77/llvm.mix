@@ -58,11 +58,6 @@ namespace mix {
 // Staged global state.
 class StagedModule {
 public:
-  StagedModule(Function *Parent) : Parent(Parent) {}
-
-  Function *getParent() const { return Parent; }
-  llvm::Module &getParentModule() const { return *Parent->getParent(); }
-
   Instruction *lookupType(Type *Ty) const { return Types.lookup(Ty); }
 
   void setStagedType(Type *Ty, Instruction *StagedTy) {
@@ -73,7 +68,6 @@ public:
   }
 
 private:
-  Function *Parent;
   DenseMap<Type *, Instruction *> Types;
 };
 
@@ -87,7 +81,7 @@ public:
   StagedIRBuilder(StagedIRBuilder &&Other) = default;
 
   IRBuilder &getBuilder() const { return B; }
-  StagedModule &getModule() const { return SM; }
+  StagedModule &getStagedModule() const { return SM; }
 
   FunctionType *getFunctionType() const { return FTy; }
   Instruction *getFunction() const { return SF; }
@@ -140,6 +134,7 @@ public:
   void setCalledValue(Instruction *Call, Instruction *V);
 
 private:
+  Module &getModule() const { return *B.GetInsertBlock()->getModule(); }
   Instruction *stageBasicBlock(BasicBlock *Block);
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
@@ -166,7 +161,7 @@ Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     FunctionType *Type, GlobalValue::LinkageTypes Linkage, const Twine &Name,
     const Twine &InstName) {
   auto *F =
-      B.CreateCall(getAddFunctionFn(SM.getParentModule()),
+      B.CreateCall(getAddFunctionFn(getModule()),
                    {C.getModule(B), stage(Name.str()), stage(Type)}, InstName);
 
   if (Linkage != GlobalValue::ExternalLinkage) {
@@ -229,7 +224,7 @@ StagedIRBuilder<IRBuilder>::setLinkage(Value *Global,
   }
 
   return B.CreateCall(
-      getSetLinkageFn(SM.getParentModule()),
+      getSetLinkageFn(getModule()),
       {Global, ConstantInt::get(getLinkageTy(B.getContext()), CAPILinkage)});
 }
 
@@ -237,15 +232,14 @@ StagedIRBuilder<IRBuilder>::setLinkage(Value *Global,
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::setName(Instruction *I,
                                                  StringRef Name) {
-  return B.CreateCall(getSetValueNameFn(SM.getParentModule()),
-                      {I, stage(Name)});
+  return B.CreateCall(getSetValueNameFn(getModule()), {I, stage(Name)});
 }
 
 template <typename IRBuilder>
 Instruction *
 StagedIRBuilder<IRBuilder>::positionBuilderAtEnd(Instruction *StagedBlock,
                                                  const Twine &InstName) {
-  return B.CreateCall(getPositionBuilderAtEndFn(SM.getParentModule()),
+  return B.CreateCall(getPositionBuilderAtEndFn(getModule()),
                       {C.getBuilder(B), StagedBlock}, InstName);
 }
 
@@ -259,37 +253,37 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 
   switch (Ty->getTypeID()) {
   case Type::VoidTyID:
-    StagedTy = B.CreateCall(getVoidTypeInContextFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getVoidTypeInContextFn(getModule()),
                             C.getContext(B), InstName);
     break;
 
   case Type::HalfTyID:
-    StagedTy = B.CreateCall(getHalfTypeInContextFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getHalfTypeInContextFn(getModule()),
                             C.getContext(B), InstName);
     break;
 
   case Type::FloatTyID:
-    StagedTy = B.CreateCall(getFloatTypeInContextFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getFloatTypeInContextFn(getModule()),
                             C.getContext(B), InstName);
     break;
 
   case Type::DoubleTyID:
-    StagedTy = B.CreateCall(getDoubleTypeInContextFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getDoubleTypeInContextFn(getModule()),
                             C.getContext(B), InstName);
     break;
 
   case Type::X86_FP80TyID:
-    StagedTy = B.CreateCall(getX86FP80TypeInContextFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getX86FP80TypeInContextFn(getModule()),
                             C.getContext(B), InstName);
     break;
 
   case Type::FP128TyID:
-    StagedTy = B.CreateCall(getFP128TypeInContextFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getFP128TypeInContextFn(getModule()),
                             C.getContext(B), InstName);
     break;
 
   case Type::PPC_FP128TyID:
-    StagedTy = B.CreateCall(getPPCFP128TypeInContextFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getPPCFP128TypeInContextFn(getModule()),
                             C.getContext(B), InstName);
     break;
 
@@ -304,7 +298,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
     case 64:
     case 128:
       StagedTy = B.CreateCall(
-          SM.getParent()->getParent()->getOrInsertFunction(
+          getModule().getOrInsertFunction(
               "LLVMInt" + std::to_string(BitWidth) + "TypeInContext",
               FunctionType::get(getTypePtrTy(B.getContext()),
                                 {getContextPtrTy(B.getContext())}, false)),
@@ -313,7 +307,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
 
     default:
       StagedTy = B.CreateCall(
-          getIntTypeInContextFn(SM.getParentModule()),
+          getIntTypeInContextFn(getModule()),
           {C.getContext(B),
            ConstantInt::get(getUnsignedIntTy(B.getContext()), BitWidth)},
           InstName);
@@ -341,7 +335,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
     }
 
     StagedTy = B.CreateCall(
-        getFunctionTypeFn(SM.getParentModule()),
+        getFunctionTypeFn(getModule()),
         {stage(FT->getReturnType()), Params,
          ConstantInt::get(getUnsignedIntTy(B.getContext()), FT->getNumParams()),
          ConstantInt::get(getBoolTy(B.getContext()), false)},
@@ -352,7 +346,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
   case Type::PointerTyID: {
     auto *PT = cast<PointerType>(Ty);
 
-    StagedTy = B.CreateCall(getPointerTypeFn(SM.getParentModule()),
+    StagedTy = B.CreateCall(getPointerTypeFn(getModule()),
                             {stage(PT->getElementType()),
                              ConstantInt::get(getUnsignedIntTy(B.getContext()),
                                               PT->getAddressSpace())});
@@ -377,12 +371,12 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
     }
 
     if (ST->hasName()) {
-      StagedTy = B.CreateCall(getStructCreateNamedFn(SM.getParentModule()),
+      StagedTy = B.CreateCall(getStructCreateNamedFn(getModule()),
                               {C.getContext(B), stage(ST->getName())});
 
       if (!ST->isOpaque()) {
         B.CreateCall(
-            getStructSetBodyFn(SM.getParentModule()),
+            getStructSetBodyFn(getModule()),
             {StagedTy, Elements,
              ConstantInt::get(getUnsignedIntTy(B.getContext()),
                               ST->getNumElements()),
@@ -391,7 +385,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Type *Ty,
       }
     } else {
       StagedTy = B.CreateCall(
-          getStructTypeInContextFn(SM.getParentModule()),
+          getStructTypeInContextFn(getModule()),
           {C.getContext(B), Elements,
            ConstantInt::get(getUnsignedIntTy(B.getContext()),
                             ST->getNumElements()),
@@ -412,7 +406,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Argument *Arg, unsigned ArgNo) {
   assert(!StagedValues.count(Arg) && "Argument has already been staged");
 
   Instruction *StagedArg =
-      B.CreateCall(getGetParamFn(SM.getParentModule()),
+      B.CreateCall(getGetParamFn(getModule()),
                    {getFunction(),
                     ConstantInt::get(getUnsignedIntTy(B.getContext()), ArgNo)},
                    Arg->getName());
@@ -423,7 +417,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Argument *Arg, unsigned ArgNo) {
 
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageBasicBlock(BasicBlock *Block) {
-  return B.CreateCall(getAppendBasicBlockInContextFn(SM.getParentModule()),
+  return B.CreateCall(getAppendBasicBlockInContextFn(getModule()),
                       {C.getContext(B), getFunction(), stage(Block->getName())},
                       Block->getName());
 }
@@ -448,7 +442,7 @@ void StagedIRBuilder<IRBuilder>::stageIncomingList(PHINode *Phi,
                                IncomingBlockAlloca);
 
                  B.CreateCall(
-                     getAddIncomingFn(SM.getParentModule()),
+                     getAddIncomingFn(getModule()),
                      {StagedPhi, IncomingValueAlloca, IncomingBlockAlloca,
                       ConstantInt::get(getUnsignedIntTy(B.getContext()), 1)});
                });
@@ -609,7 +603,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
   assert(BuilderName && "Builder name is not set");
 
   return B.CreateCall(
-      SM.getParent()->getParent()->getOrInsertFunction(
+      getModule().getOrInsertFunction(
           "LLVMBuild"s + BuilderName,
           FunctionType::get(getValuePtrTy(B.getContext()), ParamTypes, false)),
       Arguments, Inst->getName());
@@ -810,12 +804,12 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
           BitWidth < getDoubleTy(B.getContext())->getPrimitiveSizeInBits()
               ? B.CreateFPExt(StaticV, getDoubleTy(B.getContext()))
               : StaticV;
-      StagedV = B.CreateCall(getConstRealFn(SM.getParentModule()),
-                             {stage(Ty), Double}, StaticV->getName());
+      StagedV = B.CreateCall(getConstRealFn(getModule()), {stage(Ty), Double},
+                             StaticV->getName());
     } else {
       Value *Int = stageStatic(B.CreateBitCast(StaticV, B.getIntNTy(BitWidth)));
-      StagedV = B.CreateCall(getConstBitCastFn(SM.getParentModule()),
-                             {Int, stage(Ty)}, StaticV->getName());
+      StagedV = B.CreateCall(getConstBitCastFn(getModule()), {Int, stage(Ty)},
+                             StaticV->getName());
     }
     break;
   }
@@ -830,7 +824,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
               ? B.CreateZExt(StaticV, getUnsignedLongLongIntTy(B.getContext()))
               : StaticV;
       StagedV = B.CreateCall(
-          getConstIntFn(SM.getParentModule()),
+          getConstIntFn(getModule()),
           {stage(Ty), ULL, ConstantInt::get(getBoolTy(B.getContext()), false)},
           StaticV->getName());
     } else {
@@ -845,7 +839,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
       }
 
       StagedV = B.CreateCall(
-          getConstIntOfArbitraryPrecisionFn(SM.getParentModule()),
+          getConstIntOfArbitraryPrecisionFn(getModule()),
           {stage(Ty),
            ConstantInt::get(getUnsignedIntTy(B.getContext()), NumWords), Words},
           StaticV->getName());
@@ -860,8 +854,8 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
         B.CreatePtrToInt(StaticV, getUnsignedLongLongIntTy(B.getContext()));
 
     StagedV = B.CreateCall(
-        getConstIntToPtrFn(SM.getParentModule()),
-        {B.CreateCall(getConstIntFn(SM.getParentModule()),
+        getConstIntToPtrFn(getModule()),
+        {B.CreateCall(getConstIntFn(getModule()),
                       {stage(IntPtr->getType()), IntPtr,
                        ConstantInt::get(getBoolTy(B.getContext()), false)}),
          stage(Ty)},
@@ -887,13 +881,13 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
     }
 
     if (ST->hasName()) {
-      StagedV = B.CreateCall(getConstNamedStructFn(SM.getParentModule()),
+      StagedV = B.CreateCall(getConstNamedStructFn(getModule()),
                              {stage(ST), Elements,
                               ConstantInt::get(getUnsignedIntTy(B.getContext()),
                                                ST->getNumElements())});
     } else {
       StagedV = B.CreateCall(
-          getConstStructInContextFn(SM.getParentModule()),
+          getConstStructInContextFn(getModule()),
           {C.getContext(B), Elements,
            ConstantInt::get(getUnsignedIntTy(B.getContext()),
                             ST->getNumElements()),

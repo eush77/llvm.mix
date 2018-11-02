@@ -222,12 +222,12 @@ private:
 template <typename ArgsT>
 void MixFunction::buildFunction(GlobalValue::LinkageTypes Linkage, ArgsT Args,
                                 BasicBlock *InsertBefore) {
-  Entry = BasicBlock::Create(InsertBefore->getContext(),
-                             Twine(F->getName()) + ".entry",
-                             SB.getModule().getParent(), InsertBefore);
-  Exit = BasicBlock::Create(InsertBefore->getContext(),
-                            Twine(F->getName()) + ".exit",
-                            SB.getModule().getParent(), InsertBefore);
+  Entry = BasicBlock::Create(
+      InsertBefore->getContext(), Twine(F->getName()) + ".entry",
+      SB.getBuilder().GetInsertBlock()->getParent(), InsertBefore);
+  Exit = BasicBlock::Create(
+      InsertBefore->getContext(), Twine(F->getName()) + ".exit",
+      SB.getBuilder().GetInsertBlock()->getParent(), InsertBefore);
 
   SB.getBuilder().SetInsertPoint(Entry);
 
@@ -338,7 +338,7 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
                                    Parent->getParent(), Parent->getNextNode());
 
             MixFunction Mix(SB.getBuilder(), C.getTable(), C.getTablePointer(),
-                            SB.getModule(), Callee,
+                            SB.getStagedModule(), Callee,
                             GlobalValue::InternalLinkage, StaticArgs, BTA,
                             Tail);
             BranchInst::Create(Mix.getEntry(), Parent);
@@ -435,7 +435,7 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
                << I << "\n\n");
 
   MixContextTable T;
-  StagedModule SM(I.getFunction());
+  StagedModule SM;
   IRBuilder<> B(&I);
 
   // Create indirection by allocating a dummy context table and RAUWing it
