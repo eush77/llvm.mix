@@ -19,9 +19,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -542,55 +540,6 @@ void Function::recalculateIntrinsicID() {
   IntID = lookupIntrinsicID(Name);
 }
 
-/// Returns a stable mangling for the type specified for use in the name
-/// mangling scheme used by 'any' types in intrinsic signatures.  The mangling
-/// of named types is simply their name.  Manglings for unnamed types consist
-/// of a prefix ('p' for pointers, 'a' for arrays, 'f_' for functions)
-/// combined with the mangling of their component types.  A vararg function
-/// type will have a suffix of 'vararg'.  Since function types can contain
-/// other function types, we close a function type mangling with suffix 'f'
-/// which can't be confused with it's prefix.  This ensures we don't have
-/// collisions between two unrelated function types. Otherwise, you might
-/// parse ffXX as f(fXX) or f(fX)X.  (X is a placeholder for any other type.)
-/// Manglings of integers, floats, and vectors ('i', 'f', and 'v' prefix in most
-/// cases) fall back to the MVT codepath, where they could be mangled to
-/// 'x86mmx', for example; matching on derived types is not sufficient to mangle
-/// everything.
-static std::string getMangledTypeStr(Type* Ty) {
-  std::string Result;
-  if (PointerType* PTyp = dyn_cast<PointerType>(Ty)) {
-    Result += "p" + utostr(PTyp->getAddressSpace()) +
-      getMangledTypeStr(PTyp->getElementType());
-  } else if (ArrayType* ATyp = dyn_cast<ArrayType>(Ty)) {
-    Result += "a" + utostr(ATyp->getNumElements()) +
-      getMangledTypeStr(ATyp->getElementType());
-  } else if (StructType *STyp = dyn_cast<StructType>(Ty)) {
-    if (!STyp->isLiteral()) {
-      Result += "s_";
-      Result += STyp->getName();
-    } else {
-      Result += "sl_";
-      for (auto Elem : STyp->elements())
-        Result += getMangledTypeStr(Elem);
-    }
-    // Ensure nested structs are distinguishable.
-    Result += "s";
-  } else if (FunctionType *FT = dyn_cast<FunctionType>(Ty)) {
-    Result += "f_" + getMangledTypeStr(FT->getReturnType());
-    for (size_t i = 0; i < FT->getNumParams(); i++)
-      Result += getMangledTypeStr(FT->getParamType(i));
-    if (FT->isVarArg())
-      Result += "vararg";
-    // Ensure nested function types are distinguishable.
-    Result += "f"; 
-  } else if (isa<VectorType>(Ty))
-    Result += "v" + utostr(Ty->getVectorNumElements()) +
-      getMangledTypeStr(Ty->getVectorElementType());
-  else if (Ty)
-    Result += EVT::getEVT(Ty).getEVTString();
-  return Result;
-}
-
 StringRef Intrinsic::getName(ID id) {
   assert(id < num_intrinsics && "Invalid intrinsic ID!");
   assert(!isOverloaded(id) &&
@@ -602,7 +551,7 @@ std::string Intrinsic::getName(ID id, ArrayRef<Type*> Tys) {
   assert(id < num_intrinsics && "Invalid intrinsic ID!");
   std::string Result(IntrinsicNameTable[id]);
   for (Type *Ty : Tys) {
-    Result += "." + getMangledTypeStr(Ty);
+    Result += "." + Ty->getMangledTypeStr();
   }
   return Result;
 }

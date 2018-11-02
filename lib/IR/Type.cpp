@@ -16,8 +16,10 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -28,6 +30,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <string>
 #include <utility>
 
 using namespace llvm;
@@ -35,6 +38,54 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 //                         Type Class Implementation
 //===----------------------------------------------------------------------===//
+
+/// Returns a stable mangling for the current type for use in IR identifiers,
+/// e.g. intrinsic signatures. The mangling of named types is simply their
+/// name. Manglings for unnamed types consist of a prefix ('p' for pointers,
+/// 'a' for arrays, 'f_' for functions) combined with the mangling of their
+/// component types. A vararg function type will have a suffix of 'vararg'.
+/// Since function types can contain other function types, we close a function
+/// type mangling with suffix 'f' which can't be confused with it's prefix.
+/// This ensures we don't have collisions between two unrelated function
+/// types. Otherwise, you might parse ffXX as f(fXX) or f(fX)X. (X is a
+/// placeholder for any other type.) Manglings of integers, floats, and
+/// vectors ('i', 'f', and 'v' prefix in most cases) fall back to the MVT
+/// codepath, where they could be mangled to 'x86mmx', for example; matching
+/// on derived types is not sufficient to mangle everything.
+std::string Type::getMangledTypeStr() const {
+  std::string Result;
+  if (const PointerType *PTyp = dyn_cast<PointerType>(this)) {
+    Result += "p" + utostr(PTyp->getAddressSpace()) +
+              PTyp->getElementType()->getMangledTypeStr();
+  } else if (const ArrayType *ATyp = dyn_cast<ArrayType>(this)) {
+    Result += "a" + utostr(ATyp->getNumElements()) +
+              ATyp->getElementType()->getMangledTypeStr();
+  } else if (const StructType *STyp = dyn_cast<StructType>(this)) {
+    if (!STyp->isLiteral()) {
+      Result += "s_";
+      Result += STyp->getName();
+    } else {
+      Result += "sl_";
+      for (auto Elem : STyp->elements())
+        Result += Elem->getMangledTypeStr();
+    }
+    // Ensure nested structs are distinguishable.
+    Result += "s";
+  } else if (const FunctionType *FT = dyn_cast<FunctionType>(this)) {
+    Result += "f_" + FT->getReturnType()->getMangledTypeStr();
+    for (size_t i = 0; i < FT->getNumParams(); i++)
+      Result += FT->getParamType(i)->getMangledTypeStr();
+    if (FT->isVarArg())
+      Result += "vararg";
+    // Ensure nested function types are distinguishable.
+    Result += "f";
+  } else if (isa<VectorType>(this))
+    Result += "v" + utostr(getVectorNumElements()) +
+              getVectorElementType()->getMangledTypeStr();
+  else
+    Result += EVT::getEVT(const_cast<Type*>(this)).getEVTString();
+  return Result;
+}
 
 Type *Type::getPrimitiveType(LLVMContext &C, TypeID IDNumber) {
   switch (IDNumber) {
