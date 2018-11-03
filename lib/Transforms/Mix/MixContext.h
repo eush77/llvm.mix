@@ -25,8 +25,10 @@
 #include "llvm/ADT/PointerEmbeddedInt.h"
 #include "llvm/ADT/PointerSumType.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
 #include <string>
@@ -76,15 +78,30 @@ public:
   // Build code to allocate and populate the context table. Returns dynamic
   // table pointer that can be used to creat MixContext instances.
   template <typename IRBuilder>
-  Value *build(IRBuilder &, Value *DynContext, StringRef ModuleID) const;
+  Value *build(IRBuilder &, Value *DynContext, StringRef ModuleID);
 
 private:
-  template <typename IRBuilder>
-  Value *buildEntry(IRBuilder &, ValueDesc, Value *DynContext,
-                    StringRef ModuleID,
-                    DenseMap<ValueDesc, Value *> &Values) const;
+  template <typename IRBuilder> Value *buildEntry(IRBuilder &, ValueDesc);
 
+  template <ValueDescTag VDT, typename IRBuilder>
+  Value *buildEntry(IRBuilder &B) {
+    return buildEntry(B, ValueDesc::create<VDT>({}));
+  }
+
+  template <ValueDescTag VDT, typename IRBuilder, typename ValueDescPointer>
+  Value *buildEntry(IRBuilder &B, ValueDescPointer VDP) {
+    return buildEntry(B, ValueDesc::create<VDT>(VDP));
+  }
+
+  template <typename IRBuilder> static Module &getModule(IRBuilder &B) {
+    return *B.GetInsertBlock()->getModule();
+  }
+
+  // Descriptor table
   MapVector<ValueDesc, unsigned> Desc;
+
+  // Map of available values
+  DenseMap<ValueDesc, Value *> Values;
 };
 
 // A pair of static and dynamic context table pointers. This class provides
@@ -140,34 +157,42 @@ private:
 
 template <typename IRBuilder>
 Value *MixContextTable::build(IRBuilder &B, Value *DynContext,
-                              StringRef ModuleID) const {
-  // Cast DynContext to the correct type.
-  DynContext = B.CreateBitCast(DynContext, getContextPtrTy(B.getContext()),
-                               DynContext->getName());
+                              StringRef ModuleID) {
+  auto ContextVD = ValueDesc::create<VDT_Context>({});
+  auto ModuleVD = ValueDesc::create<VDT_Module>({});
+
+  // Build context.
+  Values[ContextVD] = DynContext = B.CreateBitCast(
+      DynContext, getContextPtrTy(B.getContext()), getName(ContextVD));
+
+  // Build module.
+  Values[ModuleVD] =
+      B.CreateCall(getModuleCreateWithNameInContextFn(getModule(B)),
+                   {B.CreateGlobalStringPtr(ModuleID, "moduleid"), DynContext},
+                   getName(ModuleVD));
 
   // Allocate the table.
   Value *Table = B.CreateAlloca(getTablePtrTy(B.getContext())->getElementType(),
                                 B.getInt32(Desc.size()), "mix.context");
-
-  // Value map with available values
-  DenseMap<ValueDesc, Value *> Values;
 
   for (auto &P : Desc) {
     ValueDesc VD;
     unsigned Index;
     std::tie(VD, Index) = P;
 
-    B.CreateStore(buildEntry(B, VD, DynContext, ModuleID, Values),
-                  B.CreateGEP(Table, B.getInt32(Index)));
+    B.CreateStore(
+        B.CreateBitCast(buildEntry(B, VD),
+                        getTablePtrTy(B.getContext())->getElementType(),
+                        getName(VD)),
+        B.CreateGEP(Table, B.getInt32(Index)));
   }
 
+  Values.clear();
   return Table;
 }
 
 template <typename IRBuilder>
-Value *MixContextTable::buildEntry(IRBuilder &B, ValueDesc VD,
-                                   Value *DynContext, StringRef ModuleID,
-                                   DenseMap<ValueDesc, Value *> &Values) const {
+Value *MixContextTable::buildEntry(IRBuilder &B, ValueDesc VD) {
   Value *&V = Values[VD];
 
   if (V)
@@ -178,25 +203,17 @@ Value *MixContextTable::buildEntry(IRBuilder &B, ValueDesc VD,
     break;
 
   case VDT_Context:
-    V = DynContext;
+  case VDT_Module:
+    llvm_unreachable(
+        "Descriptor must have been built in MixContextTable::build");
     break;
 
   case VDT_Builder:
-    V = B.CreateCall(
-        getCreateBuilderInContextFn(*B.GetInsertBlock()->getModule()),
-        DynContext, getName(VD));
-    break;
-
-  case VDT_Module:
-    V = B.CreateCall(
-        getModuleCreateWithNameInContextFn(*B.GetInsertBlock()->getModule()),
-        {B.CreateGlobalStringPtr(ModuleID, "moduleid"), DynContext},
-        getName(VD));
+    V = B.CreateCall(getCreateBuilderInContextFn(getModule(B)),
+                     buildEntry<VDT_Context>(B), getName(VD));
     break;
   }
 
-  V = B.CreateBitCast(V, getTablePtrTy(B.getContext())->getElementType(),
-                      V->getName());
   return V;
 }
 
