@@ -38,6 +38,9 @@ Type *mix::getType(LLVMContext &C, ValueDesc VD) {
 
   case VDT_Module:
     return getModulePtrTy(C);
+
+  case VDT_Type:
+    return getTypePtrTy(C);
   }
 
   llvm_unreachable("Unhandled ValueDesc");
@@ -56,6 +59,9 @@ std::string mix::getName(ValueDesc VD) {
 
   case VDT_Module:
     return "module";
+
+  case VDT_Type:
+    return "type." + VD.get<VDT_Type>()->getMangledTypeStr();
   }
 
   llvm_unreachable("Unhandled ValueDesc");

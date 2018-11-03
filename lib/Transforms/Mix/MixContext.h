@@ -25,6 +25,8 @@
 #include "llvm/ADT/PointerEmbeddedInt.h"
 #include "llvm/ADT/PointerSumType.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -37,7 +39,6 @@
 namespace llvm {
 
 class LLVMContext;
-class PointerType;
 
 namespace mix {
 
@@ -46,6 +47,7 @@ enum ValueDescTag {
   VDT_Context,
   VDT_Builder,
   VDT_Module,
+  VDT_Type,
 };
 
 using ValueDesc =
@@ -53,7 +55,8 @@ using ValueDesc =
                    PointerSumTypeMember<VDT_None, PointerEmbeddedInt<char>>,
                    PointerSumTypeMember<VDT_Context, PointerEmbeddedInt<char>>,
                    PointerSumTypeMember<VDT_Builder, PointerEmbeddedInt<char>>,
-                   PointerSumTypeMember<VDT_Module, PointerEmbeddedInt<char>>>;
+                   PointerSumTypeMember<VDT_Module, PointerEmbeddedInt<char>>,
+                   PointerSumTypeMember<VDT_Type, Type *>>;
 
 // Get IR type for value descriptor.
 Type *getType(LLVMContext &, ValueDesc);
@@ -83,15 +86,12 @@ public:
 private:
   template <typename IRBuilder> Value *buildEntry(IRBuilder &, ValueDesc);
 
-  template <ValueDescTag VDT, typename IRBuilder>
-  Value *buildEntry(IRBuilder &B) {
-    return buildEntry(B, ValueDesc::create<VDT>({}));
+  template <typename IRBuilder> Value *buildContext(IRBuilder &B) {
+    return buildEntry(B, ValueDesc::create<VDT_Context>({}));
   }
 
-  template <ValueDescTag VDT, typename IRBuilder, typename ValueDescPointer>
-  Value *buildEntry(IRBuilder &B, ValueDescPointer VDP) {
-    return buildEntry(B, ValueDesc::create<VDT>(VDP));
-  }
+  template <typename IRBuilder>
+  Value *buildType(IRBuilder &, Type *, StringRef Name = "");
 
   template <typename IRBuilder> static Module &getModule(IRBuilder &B) {
     return *B.GetInsertBlock()->getModule();
@@ -134,6 +134,11 @@ public:
     return getValue(B, ValueDesc::create<VDT_Module>({}));
   }
 
+  // Get staged LLVMTypeRef.
+  template <typename IRBuilder> Value *getType(IRBuilder &B, Type *Ty) {
+    return getValue(B, ValueDesc::create<VDT_Type>(Ty));
+  }
+
 private:
   // Resolve value descriptor in the context table.
   template <typename IRBuilder> Value *getValue(IRBuilder &B, ValueDesc VD) {
@@ -148,7 +153,7 @@ private:
   Value *getValue(IRBuilder &B, ValueDesc VD, unsigned Index) const {
     return B.CreateBitCast(
         B.CreateLoad(B.CreateGEP(TP, B.getInt32(Index)), getName(VD)),
-        getType(B.getContext(), VD), getName(VD));
+        mix::getType(B.getContext(), VD), getName(VD));
   }
 
   MixContextTable &T;
@@ -209,11 +214,174 @@ Value *MixContextTable::buildEntry(IRBuilder &B, ValueDesc VD) {
     break;
 
   case VDT_Builder:
-    V = B.CreateCall(getCreateBuilderInContextFn(getModule(B)),
-                     buildEntry<VDT_Context>(B), getName(VD));
+    V = B.CreateCall(getCreateBuilderInContextFn(getModule(B)), buildContext(B),
+                     getName(VD));
+    break;
+
+  case VDT_Type:
+    V = buildType(B, VD.get<VDT_Type>(), getName(VD));
     break;
   }
 
+  assert(V && "Unsupported value descriptor");
+  return V;
+}
+
+template <typename IRBuilder>
+Value *MixContextTable::buildType(IRBuilder &B, Type *Ty, StringRef Name) {
+  Value *&V = Values[ValueDesc::create<VDT_Type>(Ty)];
+
+  if (V)
+    return V;
+
+  switch (Ty->getTypeID()) {
+  case Type::VoidTyID:
+    V = B.CreateCall(getVoidTypeInContextFn(getModule(B)), buildContext(B),
+                     Name);
+    break;
+
+  case Type::HalfTyID:
+    V = B.CreateCall(getHalfTypeInContextFn(getModule(B)), buildContext(B),
+                     Name);
+    break;
+
+  case Type::FloatTyID:
+    V = B.CreateCall(getFloatTypeInContextFn(getModule(B)), buildContext(B),
+                     Name);
+    break;
+
+  case Type::DoubleTyID:
+    V = B.CreateCall(getDoubleTypeInContextFn(getModule(B)), buildContext(B),
+                     Name);
+    break;
+
+  case Type::X86_FP80TyID:
+    V = B.CreateCall(getX86FP80TypeInContextFn(getModule(B)), buildContext(B),
+                     Name);
+    break;
+
+  case Type::FP128TyID:
+    V = B.CreateCall(getFP128TypeInContextFn(getModule(B)), buildContext(B),
+                     Name);
+    break;
+
+  case Type::PPC_FP128TyID:
+    V = B.CreateCall(getPPCFP128TypeInContextFn(getModule(B)), buildContext(B),
+                     Name);
+    break;
+
+  case Type::IntegerTyID: {
+    unsigned BitWidth = cast<IntegerType>(Ty)->getBitWidth();
+
+    switch (BitWidth) {
+    case 1:
+    case 8:
+    case 16:
+    case 32:
+    case 64:
+    case 128:
+      V = B.CreateCall(
+          getModule(B).getOrInsertFunction(
+              "LLVMInt" + std::to_string(BitWidth) + "TypeInContext",
+              FunctionType::get(getTypePtrTy(B.getContext()),
+                                {getContextPtrTy(B.getContext())}, false)),
+          buildContext(B), Name);
+      break;
+
+    default:
+      V = B.CreateCall(
+          getIntTypeInContextFn(getModule(B)),
+          {buildContext(B),
+           ConstantInt::get(getUnsignedIntTy(B.getContext()), BitWidth)},
+          Name);
+    }
+    break;
+  }
+
+  case Type::FunctionTyID: {
+    auto *FT = cast<FunctionType>(Ty);
+    Value *Params;
+
+    if (FT->getNumParams()) {
+      Params = B.CreateAlloca(getTypePtrTy(B.getContext()),
+                              B.getInt32(FT->getNumParams()));
+
+      for (unsigned ParamIndex = 0; ParamIndex < FT->getNumParams();
+           ++ParamIndex) {
+        B.CreateStore(buildType(B, FT->getParamType(ParamIndex)),
+                      B.CreateGEP(Params, B.getInt32(ParamIndex)));
+      }
+    } else {
+      Params = ConstantPointerNull::get(
+          PointerType::getUnqual(getTypePtrTy(B.getContext())));
+    }
+
+    V = B.CreateCall(
+        getFunctionTypeFn(getModule(B)),
+        {buildType(B, FT->getReturnType()), Params,
+         ConstantInt::get(getUnsignedIntTy(B.getContext()), FT->getNumParams()),
+         ConstantInt::get(getBoolTy(B.getContext()), false)},
+        Name);
+    break;
+  }
+
+  case Type::PointerTyID: {
+    auto *PT = cast<PointerType>(Ty);
+
+    V = B.CreateCall(getPointerTypeFn(getModule(B)),
+                     {buildType(B, PT->getElementType()),
+                      ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                                       PT->getAddressSpace())},
+                     Name);
+    break;
+  }
+
+  case Type::StructTyID: {
+    auto *ST = cast<StructType>(Ty);
+    Value *Elements;
+
+    if (ST->getNumElements()) {
+      Elements = B.CreateAlloca(getTypePtrTy(B.getContext()),
+                                B.getInt32(ST->getNumElements()));
+
+      for (unsigned ElNum = 0; ElNum < ST->getNumElements(); ++ElNum) {
+        B.CreateStore(buildType(B, ST->getElementType(ElNum)),
+                      B.CreateGEP(Elements, B.getInt32(ElNum)));
+      }
+    } else {
+      Elements = ConstantPointerNull::get(
+          PointerType::getUnqual(getTypePtrTy(B.getContext())));
+    }
+
+    if (ST->hasName()) {
+      V = B.CreateCall(
+          getStructCreateNamedFn(getModule(B)),
+          {buildContext(B),
+           B.CreateGlobalStringPtr(ST->getName(), ST->getName() + ".name")},
+          Name);
+
+      if (!ST->isOpaque()) {
+        B.CreateCall(
+            getStructSetBodyFn(getModule(B)),
+            {V, Elements,
+             ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                              ST->getNumElements()),
+             ConstantInt::get(getBoolTy(B.getContext()), ST->isPacked())});
+      }
+    } else {
+      V = B.CreateCall(
+          getStructTypeInContextFn(getModule(B)),
+          {buildContext(B), Elements,
+           ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                            ST->getNumElements()),
+           ConstantInt::get(getBoolTy(B.getContext()), ST->isPacked())},
+          Name);
+    }
+    break;
+  }
+  }
+
+  assert(V && "Unsupported type");
   return V;
 }
 

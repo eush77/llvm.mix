@@ -181,11 +181,11 @@ TerminatorInst *traverseDynamicBlocks(BasicBlock *Start, OutputIt Out,
 class MixFunction {
 public:
   template <typename ArgsT>
-  MixFunction(IRBuilder<> &B, MixContextTable &T, Value *TP, StagedModule &SM,
-              Function *F, GlobalValue::LinkageTypes Linkage, ArgsT Args,
+  MixFunction(IRBuilder<> &B, MixContextTable &T, Value *TP, Function *F,
+              GlobalValue::LinkageTypes Linkage, ArgsT Args,
               const BindingTimeAnalysis &BTA,
               BasicBlock *InsertBefore = nullptr)
-      : C(T, TP), SB(B, C, SM), F(F), BTA(BTA) {
+      : C(T, TP), SB(B, C), F(F), BTA(BTA) {
     buildFunction(Linkage, Args, InsertBefore);
   }
 
@@ -338,9 +338,8 @@ void MixFunction::buildBasicBlock(BasicBlock *BB) {
                                    Parent->getParent(), Parent->getNextNode());
 
             MixFunction Mix(SB.getBuilder(), C.getTable(), C.getTablePointer(),
-                            SB.getStagedModule(), Callee,
-                            GlobalValue::InternalLinkage, StaticArgs, BTA,
-                            Tail);
+                            Callee, GlobalValue::InternalLinkage, StaticArgs,
+                            BTA, Tail);
             BranchInst::Create(Mix.getEntry(), Parent);
             BranchInst::Create(Tail, Mix.getExit());
 
@@ -435,7 +434,6 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
                << I << "\n\n");
 
   MixContextTable T;
-  StagedModule SM;
   IRBuilder<> B(&I);
 
   // Create indirection by allocating a dummy context table and RAUWing it
@@ -447,7 +445,7 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
   BasicBlock *Head = I.getParent();
   BasicBlock *Tail = Head->splitBasicBlock(&I, Head->getName());
 
-  MixFunction Mix(B, T, TP, SM, MixedF, GlobalValue::ExternalLinkage,
+  MixFunction Mix(B, T, TP, MixedF, GlobalValue::ExternalLinkage,
                   make_range(std::next(I.arg_begin(), 2), I.arg_end()), BTA,
                   Tail);
   cast<BranchInst>(Head->getTerminator())->setSuccessor(0, Mix.getEntry());
