@@ -1,10 +1,11 @@
-; RUN: opt -S -mix %s -o - | FileCheck %s --implicit-check-not=define
+; RUN: opt -S -mix %s -o - | FileCheck %s
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n)
+; CHECK: define private %struct.LLVMOpaqueValue* @power-iter.main(%struct.LLVMOpaqueContext* %context, i32 %n)
+; CHECK: define private %struct.LLVMOpaqueValue* @power-iter.mix(i8** %mix.context, i32 %n)
 ; CHECK-STAGE-LABEL: define i32 @power-iter(i32 %x)
 define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n) stage(1) {
 ; CHECK: entry:
@@ -42,7 +43,6 @@ exit:
   ret i32 %res.0
 }
 
-; CHECK-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
   %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32, i32)* @power-iter to i8*), i8* %c, i32 5)

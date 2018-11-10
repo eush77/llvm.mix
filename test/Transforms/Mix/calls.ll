@@ -1,10 +1,8 @@
-; RUN: opt -S -mix %s -o - | FileCheck %s --implicit-check-not=define
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define stage(1) i32 @g(i32 %x)
 ; CHECK-STAGE-LABEL: define i32 @g()
 define stage(1) i32 @g(i32 %x) stage(1) {
   ; CHECK-STAGE-NEXT: %t0 = call i32 @e(i32 4)
@@ -19,20 +17,17 @@ define stage(1) i32 @g(i32 %x) stage(1) {
   ret i32 %t3
 }
 
-; CHECK-LABEL: define i32 @e(i32 %x)
 ; CHECK-STAGE-LABEL: declare i32 @e(i32)
 define i32 @e(i32 %x) {
   %y = add i32 %x, 1
   ret i32 %y
 }
 
-; CHECK-LABEL: define internal i32 @i(i32 %x)
 define internal i32 @i(i32 %x) {
   %y = add i32 %x, 1
   ret i32 %y
 }
 
-; CHECK-LABEL: define stage(1) i32 @f(i32 stage(1) %x, i32 %n)
 ; CHECK-STAGE-LABEL: define internal i32 @f(i32 %x)
 define stage(1) i32 @f(i32 stage(1) %x, i32 %n) stage(1) {
   ; CHECK-STAGE-NEXT: %y = add i32 %x, 4
@@ -44,7 +39,6 @@ define stage(1) i32 @f(i32 stage(1) %x, i32 %n) stage(1) {
   ret i32 %z
 }
 
-; CHECK-LABEL: define stage(1) i32 @h(i32 stage(1) %x, i32 %m)
 ; CHECK-STAGE-LABEL: define internal i32 @h(i32 %x)
 define stage(1) i32 @h(i32 stage(1) %x, i32 %m) stage(1) {
   ; CHECK-STAGE-NEXT: %y = mul i32 %x, 5
@@ -62,7 +56,6 @@ define stage(1) i32 @h(i32 stage(1) %x, i32 %m) stage(1) {
 ; CHECK-STAGE-NEXT: %y = mul i32 %x, 7
 ; CHECK-STAGE-NEXT: ret i32 %y
 
-; CHECK-LABEL: define void @main()
 define void @main() {
   %context = call i8* @LLVMContextCreate()
   %function = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32)* @g to i8*), i8* %context, i32 4)

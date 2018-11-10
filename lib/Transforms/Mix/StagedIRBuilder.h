@@ -65,18 +65,16 @@ public:
 
   IRBuilder &getBuilder() const { return B; }
 
-  FunctionType *getFunctionType() const { return FTy; }
+  // Interface to current staged function/block.
   Instruction *getFunction() const { return SF; }
-  void setFunction(FunctionType *Ty, Instruction *F) {
-    FTy = Ty;
-    SF = F;
-  }
+  Instruction *getBasicBlock() const { return SBB; }
 
   // Interface to particular LLVM API calls.
   Instruction *createFunction(FunctionType *Type,
                               GlobalValue::LinkageTypes Linkage,
                               const Twine &Name = "",
-                              const Twine &InstName = "");
+                              const Twine &InstName = "",
+                              bool SetFunction = false);
   Instruction *setLinkage(Value *Global, GlobalValue::LinkageTypes Linkage);
   Instruction *setName(Instruction *I, StringRef Name);
   Instruction *positionBuilderAtEnd(Instruction *StagedBasicBlock,
@@ -87,8 +85,9 @@ public:
   // block means creating an empty basic block in the staged function.
   Instruction *stage(Value *V);
   Instruction *stage(Argument *A, unsigned ArgNo);
+  Instruction *stage(BasicBlock *BB, bool SetBasicBlock);
   Instruction *stage(std::unique_ptr<Instruction, ValueDeleter> &&I) {
-    return stage(I.get());
+    return stageInstruction(I.get());
   }
 
   void setStagedValue(Value *V, Instruction *StagedV);
@@ -124,8 +123,8 @@ private:
 
   IRBuilder &B;
   MixContext C;
-  FunctionType *FTy = nullptr;
   Instruction *SF = nullptr;
+  Instruction *SBB = nullptr;
   DenseMap<Value *, Instruction *> StagedValues;
   std::unordered_multimap<Value *, std::function<void(Instruction *)>>
       StageCallbacks;
@@ -137,7 +136,7 @@ private:
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     FunctionType *Type, GlobalValue::LinkageTypes Linkage, const Twine &Name,
-    const Twine &InstName) {
+    const Twine &InstName, bool SetFunction) {
   auto *F = B.CreateCall(
       getAddFunctionFn(getModule()),
       {C.getModule(B), stage(Name.str()), C.getType(B, Type)}, InstName);
@@ -145,6 +144,9 @@ Instruction *StagedIRBuilder<IRBuilder>::createFunction(
   if (Linkage != GlobalValue::ExternalLinkage) {
     setLinkage(F, Linkage);
   }
+
+  if (SetFunction)
+    SF = F;
 
   return F;
 }
@@ -225,20 +227,30 @@ template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stage(Argument *Arg, unsigned ArgNo) {
   assert(!StagedValues.count(Arg) && "Argument has already been staged");
 
-  Instruction *StagedArg =
-      B.CreateCall(getGetParamFn(getModule()),
-                   {getFunction(),
-                    ConstantInt::get(getUnsignedIntTy(B.getContext()), ArgNo)},
-                   Arg->getName());
+  Instruction *StagedArg = B.CreateCall(
+      getGetParamFn(getModule()),
+      {SF, ConstantInt::get(getUnsignedIntTy(B.getContext()), ArgNo)},
+      Arg->getName());
 
   setStagedValue(Arg, StagedArg);
   return StagedArg;
 }
 
 template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stage(BasicBlock *BB,
+                                               bool SetBasicBlock) {
+  Instruction *SBB = stage(BB);
+
+  if (SetBasicBlock)
+    this->SBB = SBB;
+
+  return SBB;
+}
+
+template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageBasicBlock(BasicBlock *Block) {
   return B.CreateCall(getAppendBasicBlockInContextFn(getModule()),
-                      {C.getContext(B), getFunction(), stage(Block->getName())},
+                      {C.getContext(B), SF, stage(Block->getName())},
                       Block->getName());
 }
 

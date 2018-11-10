@@ -1,14 +1,8 @@
-; RUN: opt -S -mix %s -o - | FileCheck %s --implicit-check-not=define
-; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
-; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
+; RUN: opt -S -mix %s -o - | FileCheck %s
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define void @f(
-; CHECK-STAGE-LABEL: define void @f()
 define void @f() stage(1) {
-  ; CHECK-NEXT: ret void
-  ; CHECK-STAGE-NEXT: ret void
   ret void
 }
 
@@ -18,7 +12,8 @@ define void @main() {
   ; CHECK: %c = bitcast %struct.LLVMOpaqueContext* %context to i8*
   %c = bitcast %struct.LLVMOpaqueContext* %context to i8*
   ; CHECK-NEXT: [[context:%.+]] = bitcast i8* %c to %struct.LLVMOpaqueContext*
-  ; CHECK: %f = bitcast %struct.LLVMOpaqueValue* %{{.+}} to i8*
+  ; CHECK-NEXT: [[function:%.+]] = call %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* [[context]])
+  ; CHECK-NEXT: %f = bitcast %struct.LLVMOpaqueValue* [[function]] to i8*
   %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void ()* @f to i8*), i8* %c)
   ; CHECK-NEXT: %function = bitcast i8* %f to %struct.LLVMOpaqueValue*
   %function = bitcast i8* %f to %struct.LLVMOpaqueValue*

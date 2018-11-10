@@ -5,9 +5,20 @@
 ; RUN: | opt -verify -disable-output
 
 ; CHECK-LABEL: define void @f()
+; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* %context)
+; CHECK: call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext
+; CHECK: [[context:%.+]] = alloca i8*
+; CHECK: call %struct.LLVMOpaqueBuilder* @LLVMCreateBuilderInContext
+; CHECK: call %struct.LLVMOpaqueValue* @f.mix(i8** [[context]])
+; CHECK: call void @LLVMDisposeBuilder
+
+; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
 ; CHECK-STAGE-LABEL: define void @f()
 define void @f() stage(1) {
-  ; CHECK-NEXT: ret void
+  ; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction
+  ; CHECK: [[entry:%.+]] = call %struct.LLVMOpaqueBasicBlock* @LLVMAppendBasicBlockInContext(%struct.LLVMOpaqueContext* {{.*}}, %struct.LLVMOpaqueValue* [[function]],
+  ; CHECK: call void @LLVMPositionBuilderAtEnd(%struct.LLVMOpaqueBuilder* {{.*}}, %struct.LLVMOpaqueBasicBlock* [[entry]])
+  ; CHECK: call %struct.LLVMOpaqueValue* @LLVMBuildRetVoid
   ; CHECK-STAGE-NEXT: ret void
   ret void
 }
@@ -16,13 +27,8 @@ define void @f() stage(1) {
 define void @main() {
   ; CHECK-NEXT: %context = call i8* @LLVMContextCreate()
   %context = call i8* @LLVMContextCreate()
-  ; CHECK: call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext
-  ; CHECK: call %struct.LLVMOpaqueBuilder* @LLVMCreateBuilderInContext
-  ; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction
-  ; CHECK: [[entry:%.+]] = call %struct.LLVMOpaqueBasicBlock* @LLVMAppendBasicBlockInContext(%struct.LLVMOpaqueContext* {{.*}}, %struct.LLVMOpaqueValue* [[function]],
-  ; CHECK: call void @LLVMPositionBuilderAtEnd(%struct.LLVMOpaqueBuilder* {{.*}}, %struct.LLVMOpaqueBasicBlock* [[entry]])
-  ; CHECK: call %struct.LLVMOpaqueValue* @LLVMBuildRetVoid
-  ; CHECK: call void @LLVMDisposeBuilder
+  ; CHECK-NEXT: [[context:%.+]] = bitcast i8* %context to %struct.LLVMOpaqueContext*
+  ; CHECK-NEXT: [[function:%.+]] = call %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* [[context]])
   ; CHECK: %function = bitcast %struct.LLVMOpaqueValue* [[function]] to i8*
   %function = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void ()* @f to i8*), i8* %context)
   ; CHECK-NEXT: call void @LLVMDumpValue(i8* %function)

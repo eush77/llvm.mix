@@ -5,6 +5,8 @@
 ; RUN: | opt -verify -disable-output
 
 ; CHECK-LABEL: define stage(1) i32 @f()
+; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* %context)
+; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
 ; CHECK-STAGE-LABEL: define i32 @f()
 define stage(1) i32 @f() stage(1) {
   ; CHECK-STAGE-NEXT: alloca
@@ -61,9 +63,7 @@ exit:
 ; CHECK-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  ; CHECK: call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext
-  ; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction
-  ; CHECK: %f = bitcast %struct.LLVMOpaqueValue* [[function]] to i8*
+  ; CHECK: call %struct.LLVMOpaqueValue* @f.main
   %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ()* @f to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %f)
   call void @LLVMContextDispose(i8* %c)
