@@ -361,6 +361,20 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       break;
     }
 
+    case Instruction::ExtractValue: {
+      auto *EV = cast<ExtractValueInst>(Inst);
+      assert(EV->getNumIndices() == 1 &&
+             "Unsupported number of indices for extractvalue");
+
+      pushArg(getValuePtrTy(B.getContext()), stage(EV->getAggregateOperand()));
+      pushArg(getUnsignedIntTy(B.getContext()),
+              ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                               EV->getIndices().front()));
+      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
+      setBuilderName("ExtractValue");
+      break;
+    }
+
     case Instruction::ICmp: {
       LLVMIntPredicate CAPIIntPredicate = LLVMGetICmpPredicate(wrap(Inst));
 
@@ -371,6 +385,22 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(1)));
       pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
       setBuilderName("ICmp");
+      break;
+    }
+
+    case Instruction::InsertValue: {
+      auto *IV = cast<InsertValueInst>(Inst);
+      assert(IV->getNumIndices() == 1 &&
+             "Unsupported number of indices for insertvalue");
+
+      pushArg(getValuePtrTy(B.getContext()), stage(IV->getAggregateOperand()));
+      pushArg(getValuePtrTy(B.getContext()),
+              stage(IV->getInsertedValueOperand()));
+      pushArg(getUnsignedIntTy(B.getContext()),
+              ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                               IV->getIndices().front()));
+      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
+      setBuilderName("InsertValue");
       break;
     }
 
