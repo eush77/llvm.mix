@@ -325,17 +325,6 @@ Value *MixContextTable::buildType(IRBuilder &B, Type *Ty, StringRef Name) {
     break;
   }
 
-  case Type::PointerTyID: {
-    auto *PT = cast<PointerType>(Ty);
-
-    V = B.CreateCall(getPointerTypeFn(getModule(B)),
-                     {buildType(B, PT->getElementType()),
-                      ConstantInt::get(getUnsignedIntTy(B.getContext()),
-                                       PT->getAddressSpace())},
-                     Name);
-    break;
-  }
-
   case Type::StructTyID: {
     auto *ST = cast<StructType>(Ty);
     Value *Elements;
@@ -377,6 +366,27 @@ Value *MixContextTable::buildType(IRBuilder &B, Type *Ty, StringRef Name) {
            ConstantInt::get(getBoolTy(B.getContext()), ST->isPacked())},
           Name);
     }
+    break;
+  }
+
+  case Type::ArrayTyID: {
+    auto *AT = cast<ArrayType>(Ty);
+
+    V = B.CreateCall(getArrayTypeFn(getModule(B)),
+                     {buildType(B, AT->getElementType()),
+                      ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                                       AT->getNumElements())});
+    break;
+  }
+
+  case Type::PointerTyID: {
+    auto *PT = cast<PointerType>(Ty);
+
+    V = B.CreateCall(getPointerTypeFn(getModule(B)),
+                     {buildType(B, PT->getElementType()),
+                      ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                                       PT->getAddressSpace())},
+                     Name);
     break;
   }
   }
