@@ -320,7 +320,7 @@ Value *MixContextTable::buildType(IRBuilder &B, Type *Ty, StringRef Name) {
         getFunctionTypeFn(getModule(B)),
         {buildType(B, FT->getReturnType()), Params,
          ConstantInt::get(getUnsignedIntTy(B.getContext()), FT->getNumParams()),
-         ConstantInt::get(getBoolTy(B.getContext()), false)},
+         ConstantInt::get(getBoolTy(B.getContext()), FT->isVarArg())},
         Name);
     break;
   }
