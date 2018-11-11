@@ -314,7 +314,7 @@ Mix::declareFunction(Function &F, GlobalValue::LinkageTypes Linkage) const {
   //   - Return value
   //   - Pointer to the next-stage function
   Type *RetTy = F.getReturnStage() < F.getLastStage()
-                    ? StructType::create({F.getReturnType(), getValuePtrTy(C)})
+                    ? StructType::get(C, {F.getReturnType(), getValuePtrTy(C)})
                     : static_cast<Type *>(getValuePtrTy(C));
 
   // Declare function.
