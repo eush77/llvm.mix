@@ -617,6 +617,14 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
     return StaticPhi;
   }
 
+  if (isa<UndefValue>(StaticV)) {
+    StagedV =
+        B.CreateCall(getGetUndefFn(getModule()),
+                     {C.getType(B, StaticV->getType())}, StaticV->getName());
+    setStagedValue(V, StagedV);
+    return StagedV;
+  }
+
   switch (StaticV->getType()->getTypeID()) {
   case Type::VoidTyID: {
     StagedV = nullptr;          // No staged value
