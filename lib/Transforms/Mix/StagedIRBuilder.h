@@ -137,9 +137,9 @@ template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::createFunction(
     FunctionType *Type, GlobalValue::LinkageTypes Linkage, const Twine &Name,
     const Twine &InstName, bool SetFunction) {
-  auto *F = B.CreateCall(
-      getAddFunctionFn(getModule()),
-      {C.getModule(B), stage(Name.str()), C.getType(B, Type)}, InstName);
+  auto *F = B.CreateCall(getAddFunctionFn(getModule()),
+                         {C.getModule(), stage(Name.str()), C.getType(Type)},
+                         InstName);
 
   if (Linkage != GlobalValue::ExternalLinkage) {
     setLinkage(F, Linkage);
@@ -220,7 +220,7 @@ Instruction *
 StagedIRBuilder<IRBuilder>::positionBuilderAtEnd(Instruction *StagedBlock,
                                                  const Twine &InstName) {
   return B.CreateCall(getPositionBuilderAtEndFn(getModule()),
-                      {C.getBuilder(B), StagedBlock}, InstName);
+                      {C.getBuilder(), StagedBlock}, InstName);
 }
 
 template <typename IRBuilder>
@@ -250,7 +250,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(BasicBlock *BB,
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageBasicBlock(BasicBlock *Block) {
   return B.CreateCall(getAppendBasicBlockInContextFn(getModule()),
-                      {C.getContext(B), SF, stage(Block->getName())},
+                      {C.getContext(), SF, stage(Block->getName())},
                       Block->getName());
 }
 
@@ -284,7 +284,7 @@ void StagedIRBuilder<IRBuilder>::stageIncomingList(PHINode *Phi,
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
   SmallVector<Type *, 4> ParamTypes{getBuilderPtrTy(B.getContext())};
-  SmallVector<Value *, 4> Arguments{C.getBuilder(B)};
+  SmallVector<Value *, 4> Arguments{C.getBuilder()};
   const char *BuilderName = nullptr;
 
   auto pushArg = [&ParamTypes, &Arguments](Type *Ty, Value *V) {
@@ -314,7 +314,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       auto *Alloca = cast<AllocaInst>(Inst);
 
       pushArg(getTypePtrTy(B.getContext()),
-              C.getType(B, Alloca->getAllocatedType()));
+              C.getType(Alloca->getAllocatedType()));
       if (Alloca->isArrayAllocation()) {
         pushArg(getValuePtrTy(B.getContext()), stage(Alloca->getArraySize()));
         setBuilderName("ArrayAlloca");
@@ -416,7 +416,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
     case Instruction::PHI: {
       auto *Phi = cast<PHINode>(Inst);
 
-      pushArg(getTypePtrTy(B.getContext()), C.getType(B, Phi->getType()));
+      pushArg(getTypePtrTy(B.getContext()), C.getType(Phi->getType()));
       pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
       setBuilderName("Phi");
       break;
@@ -447,7 +447,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       auto *Trunc = cast<TruncInst>(Inst);
 
       pushArg(getValuePtrTy(B.getContext()), stage(Trunc->getOperand(0)));
-      pushArg(getTypePtrTy(B.getContext()), C.getType(B, Trunc->getDestTy()));
+      pushArg(getTypePtrTy(B.getContext()), C.getType(Trunc->getDestTy()));
       pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
       setBuilderName("Trunc");
       break;
@@ -648,9 +648,8 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
   }
 
   if (isa<UndefValue>(StaticV)) {
-    StagedV =
-        B.CreateCall(getGetUndefFn(getModule()),
-                     {C.getType(B, StaticV->getType())}, StaticV->getName());
+    StagedV = B.CreateCall(getGetUndefFn(getModule()),
+                           {C.getType(StaticV->getType())}, StaticV->getName());
     setStagedValue(V, StagedV);
     return StagedV;
   }
@@ -676,11 +675,11 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
               ? B.CreateFPExt(StaticV, getDoubleTy(B.getContext()))
               : StaticV;
       StagedV = B.CreateCall(getConstRealFn(getModule()),
-                             {C.getType(B, Ty), Double}, StaticV->getName());
+                             {C.getType(Ty), Double}, StaticV->getName());
     } else {
       Value *Int = stageStatic(B.CreateBitCast(StaticV, B.getIntNTy(BitWidth)));
       StagedV = B.CreateCall(getConstBitCastFn(getModule()),
-                             {Int, C.getType(B, Ty)}, StaticV->getName());
+                             {Int, C.getType(Ty)}, StaticV->getName());
     }
     break;
   }
@@ -696,7 +695,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
               : StaticV;
       StagedV =
           B.CreateCall(getConstIntFn(getModule()),
-                       {C.getType(B, Ty), ULL,
+                       {C.getType(Ty), ULL,
                         ConstantInt::get(getBoolTy(B.getContext()), false)},
                        StaticV->getName());
     } else {
@@ -712,7 +711,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
 
       StagedV = B.CreateCall(
           getConstIntOfArbitraryPrecisionFn(getModule()),
-          {C.getType(B, Ty),
+          {C.getType(Ty),
            ConstantInt::get(getUnsignedIntTy(B.getContext()), NumWords), Words},
           StaticV->getName());
     }
@@ -728,9 +727,9 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
     StagedV = B.CreateCall(
         getConstIntToPtrFn(getModule()),
         {B.CreateCall(getConstIntFn(getModule()),
-                      {C.getType(B, IntPtr->getType()), IntPtr,
+                      {C.getType(IntPtr->getType()), IntPtr,
                        ConstantInt::get(getBoolTy(B.getContext()), false)}),
-         C.getType(B, Ty)},
+         C.getType(Ty)},
         StaticV->getName());
     break;
   }
@@ -754,13 +753,13 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
 
     if (ST->hasName()) {
       StagedV = B.CreateCall(getConstNamedStructFn(getModule()),
-                             {C.getType(B, ST), Elements,
+                             {C.getType(ST), Elements,
                               ConstantInt::get(getUnsignedIntTy(B.getContext()),
                                                ST->getNumElements())});
     } else {
       StagedV = B.CreateCall(
           getConstStructInContextFn(getModule()),
-          {C.getContext(B), Elements,
+          {C.getContext(), Elements,
            ConstantInt::get(getUnsignedIntTy(B.getContext()),
                             ST->getNumElements()),
            ConstantInt::get(getBoolTy(B.getContext()), ST->isPacked())});

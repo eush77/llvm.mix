@@ -347,8 +347,8 @@ Function *Mix::buildMain(Function &F, Function &SourceF,
   B->SetInsertPoint(BasicBlock::Create(C, "", MainF));
 
   // Build context table.
-  Value *TP =
-      T.build(*B, MainF->arg_begin(), SourceF.getName().str() + ".module");
+  Value *TP = T.build(MainF->arg_begin(), SourceF.getName().str() + ".module",
+                      B->GetInsertBlock());
 
   // Call the main mix function.
   SmallVector<Value *, 4> Args{TP};
@@ -360,7 +360,7 @@ Function *Mix::buildMain(Function &F, Function &SourceF,
                 : S;
 
   // Dispose context table.
-  MixContext(T, TP).dispose(*B);
+  MixContext(T, TP, B->GetInsertBlock()).dispose();
 
   B->CreateRet(V);
   return MainF;
@@ -368,15 +368,17 @@ Function *Mix::buildMain(Function &F, Function &SourceF,
 
 void Mix::buildFunction(Function &SourceF, const StagedFunctionInfo &SFI,
                         MixContextTable &T) {
-  MixContext MC(T, SFI.Mix->arg_begin());
-  SaveAndRestore<MixContext *> RestoreMCOnExit(this->MC, &MC);
-  StagedIRBuilder<IRBuilder<>> SB(*B, MC);
-  SaveAndRestore<StagedIRBuilder<IRBuilder<>> *> RestoreSBOnExit(this->SB, &SB);
   SaveAndRestore<Function *> RestoreSourceFOnExit(this->SourceF, &SourceF);
   Params P(SourceF,
            std::bind(std::equal_to<unsigned>(), _1, SourceF.getLastStage()));
 
   B->SetInsertPoint(BasicBlock::Create(B->getContext(), "", SFI.Mix));
+
+  MixContext MC(T, SFI.Mix->arg_begin(), B->GetInsertBlock());
+  SaveAndRestore<MixContext *> RestoreMCOnExit(this->MC, &MC);
+  StagedIRBuilder<IRBuilder<>> SB(*B, MC);
+  SaveAndRestore<StagedIRBuilder<IRBuilder<>> *> RestoreSBOnExit(this->SB, &SB);
+
   SB.createFunction(SFI.FTy, SFI.Linkage, SourceF.getName(), "function", true);
 
   // Stage function arguments.
@@ -395,13 +397,18 @@ void Mix::buildFunction(Function &SourceF, const StagedFunctionInfo &SFI,
     }
   }
 
-  B->CreateBr(SB.defineStatic(&SourceF.getEntryBlock()));
+  // Don't create terminator until the very end to allow MixContext insert
+  // instructions at the end of the block.
+  BasicBlock *Entry = SB.defineStatic(&SourceF.getEntryBlock());
 
   // Build static basic blocks in depth-first order.
   for (BasicBlock *BB : depth_first(&SourceF)) {
     if (BTA->getStage(BB) < SourceF.getLastStage())
       buildBasicBlock(*BB);
   }
+
+  B->SetInsertPoint(&SFI.Mix->getEntryBlock());
+  B->CreateBr(Entry);
 }
 
 namespace {
