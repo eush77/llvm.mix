@@ -354,6 +354,11 @@ void MixContext::dispose() {
     B.CreateCall(getDisposeBuilderFn(*B.GetInsertBlock()->getModule()), DB);
 }
 
+Value *MixContext::getValue(ValueDesc VD) {
+  Value *&V = Values[VD];
+  return V ? V : V = getValue(VD, T.getIndex(VD));
+}
+
 Value *MixContext::getValue(ValueDesc VD, unsigned Index) {
   return B.CreateBitCast(
       B.CreateLoad(B.CreateGEP(TP, B.getInt32(Index)), getName(VD)),

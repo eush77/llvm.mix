@@ -129,7 +129,7 @@ public:
 
 private:
   // Resolve value descriptor in the context table.
-  Value *getValue(ValueDesc VD) { return getValue(VD, T.getIndex(VD)); }
+  Value *getValue(ValueDesc VD);
   Value *getValue(ValueDesc VD, unsigned Index);
 
   // Same as `getValue', but return null if descriptor is not in the table.
@@ -138,6 +138,9 @@ private:
   MixContextTable &T;
   Value *TP;
   IRBuilder<> B;
+
+  // Map of available values
+  DenseMap<ValueDesc, Value *> Values;
 };
 
 } // namespace mix
