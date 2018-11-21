@@ -19,4 +19,4 @@
 type = Library
 name = Mix
 parent = Transforms
-required_libraries = Core IPO Support
+required_libraries = Analysis Core IPO Support
