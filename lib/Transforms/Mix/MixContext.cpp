@@ -77,7 +77,7 @@ std::string getName(ValueDesc VD) {
     return "module";
 
   case VDT_Type:
-    return "type." + VD.get<VDT_Type>()->getMangledTypeStr();
+    return "type." + VD.get<VDT_Type>()->getMangledTypeStr(true);
   }
 
   llvm_unreachable("Unhandled ValueDesc");
@@ -220,6 +220,11 @@ Value *MixContextTable::buildType(Type *Ty, StringRef Name) {
 
   case Type::PPC_FP128TyID:
     V = B->CreateCall(getPPCFP128TypeInContextFn(getModule()), buildContext(),
+                      Name);
+    break;
+
+  case Type::MetadataTyID:
+    V = B->CreateCall(getMetadataTypeInContextFn(getModule()), buildContext(),
                       Name);
     break;
 

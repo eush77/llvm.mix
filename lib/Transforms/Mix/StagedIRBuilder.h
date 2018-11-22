@@ -35,6 +35,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Casting.h"
@@ -116,6 +117,9 @@ private:
   Instruction *stageBasicBlock(BasicBlock *Block);
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
+  Instruction *stageMetadata(Metadata *);
+  Instruction *stageMDNode(MDNode *);
+  Instruction *stageMDString(MDString *);
 
   // Register a callback to be called when the value is staged. If the value
   // has already been staged, call it immediately.
@@ -473,6 +477,44 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
 }
 
 template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stageMetadata(Metadata *MD) {
+  switch (MD->getMetadataID()) {
+  case Metadata::MDStringKind:
+    return stageMDString(cast<MDString>(MD));
+
+  case Metadata::MDTupleKind:
+    return stageMDNode(cast<MDNode>(MD));
+  }
+
+  llvm_unreachable("Unhandled metadata kind");
+}
+
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stageMDNode(MDNode *MDN) {
+  Value *Vals = B.CreateAlloca(getValuePtrTy(B.getContext()),
+                               B.getInt32(MDN->getNumOperands()));
+
+  for (unsigned OpNum = 0; OpNum < MDN->getNumOperands(); ++OpNum) {
+    B.CreateStore(stage(MetadataAsValue::get(B.getContext(),
+                                             MDN->getOperand(OpNum).get())),
+                  B.CreateGEP(Vals, B.getInt32(OpNum)));
+  }
+
+  return B.CreateCall(getMDNodeInContextFn(getModule()),
+                      {C.getContext(), Vals,
+                       ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                                        MDN->getNumOperands())});
+}
+
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stageMDString(MDString *MDS) {
+  return B.CreateCall(
+      getMDStringInContextFn(getModule()),
+      {C.getContext(), stage(MDS->getString()),
+       ConstantInt::get(getUnsignedIntTy(B.getContext()), MDS->getLength())});
+}
+
+template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
   if (isa<Constant>(V))
     return stageStatic(V);
@@ -490,6 +532,8 @@ Instruction *StagedIRBuilder<IRBuilder>::stage(Value *V) {
     if (auto *Phi = dyn_cast<PHINode>(Inst)) {
       stageIncomingList(Phi, StagedV);
     }
+  } else if (auto *MDV = dyn_cast<MetadataAsValue>(V)) {
+    StagedV = stageMetadata(MDV->getMetadata());
   }
 
   assert(StagedV && "Unsupported value kind");

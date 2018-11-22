@@ -112,6 +112,20 @@ define %struct @struct.named() stage(1) {
   ret %struct { i32 1, i32 2 }
 }
 
+declare i32 @llvm.read_register.i32(metadata)
+
+; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @metadata.main(%struct.LLVMOpaqueContext* %context)
+; CHECK-STAGE-LABEL: define i32 @metadata()
+define stage(1) i32 @metadata() stage(1) {
+  ; CHECK: LLVMMetadataTypeInContext
+  ; CHECK-STAGE: call i32 @llvm.read_register.i32(metadata !0)
+  %x = tail call i32 @llvm.read_register.i32(metadata !0)
+  ret i32 %x
+}
+
+; CHECK-STAGE: !0 = !{!"sp\00"}
+!0 = !{!"sp\00"}
+
 define void @main() {
   %c = call i8* @LLVMContextCreate()
   %i1 = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i1 ()* @i1 to i8*), i8* %c)
@@ -138,6 +152,9 @@ define void @main() {
   %struct.named = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (%struct ()* @struct.named to i8*), i8* %c)
   %struct.named.m = call i8* @LLVMGetGlobalParent(i8* %struct.named)
   call void @LLVMDumpModule(i8* %struct.named.m)
+  %metadata = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ()* @metadata to i8*), i8* %c)
+  %metadata.m = call i8* @LLVMGetGlobalParent(i8* %metadata)
+  call void @LLVMDumpModule(i8* %metadata.m)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
