@@ -118,7 +118,7 @@ protected:
 public:
   /// Return a stable mangling for the current type for use in IR identifiers,
   /// e.g. intrinsic signatures.
-  std::string getMangledTypeStr() const;
+  std::string getMangledTypeStr(bool HandleUnknown = false) const;
 
   /// Print the current type.
   /// Omit the type details if \p NoDetails == true.

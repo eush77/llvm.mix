@@ -52,14 +52,17 @@ using namespace llvm;
 /// vectors ('i', 'f', and 'v' prefix in most cases) fall back to the MVT
 /// codepath, where they could be mangled to 'x86mmx', for example; matching
 /// on derived types is not sufficient to mangle everything.
-std::string Type::getMangledTypeStr() const {
+///
+/// If HandleUnknown is true, unknown types are handled as MVT::Other,
+/// otherwise they are invalid.
+std::string Type::getMangledTypeStr(bool HandleUnknown) const {
   std::string Result;
   if (const PointerType *PTyp = dyn_cast<PointerType>(this)) {
     Result += "p" + utostr(PTyp->getAddressSpace()) +
-              PTyp->getElementType()->getMangledTypeStr();
+              PTyp->getElementType()->getMangledTypeStr(HandleUnknown);
   } else if (const ArrayType *ATyp = dyn_cast<ArrayType>(this)) {
     Result += "a" + utostr(ATyp->getNumElements()) +
-              ATyp->getElementType()->getMangledTypeStr();
+              ATyp->getElementType()->getMangledTypeStr(HandleUnknown);
   } else if (const StructType *STyp = dyn_cast<StructType>(this)) {
     if (!STyp->isLiteral()) {
       Result += "s_";
@@ -67,23 +70,24 @@ std::string Type::getMangledTypeStr() const {
     } else {
       Result += "sl_";
       for (auto Elem : STyp->elements())
-        Result += Elem->getMangledTypeStr();
+        Result += Elem->getMangledTypeStr(HandleUnknown);
     }
     // Ensure nested structs are distinguishable.
     Result += "s";
   } else if (const FunctionType *FT = dyn_cast<FunctionType>(this)) {
-    Result += "f_" + FT->getReturnType()->getMangledTypeStr();
+    Result += "f_" + FT->getReturnType()->getMangledTypeStr(HandleUnknown);
     for (size_t i = 0; i < FT->getNumParams(); i++)
-      Result += FT->getParamType(i)->getMangledTypeStr();
+      Result += FT->getParamType(i)->getMangledTypeStr(HandleUnknown);
     if (FT->isVarArg())
       Result += "vararg";
     // Ensure nested function types are distinguishable.
     Result += "f";
   } else if (isa<VectorType>(this))
     Result += "v" + utostr(getVectorNumElements()) +
-              getVectorElementType()->getMangledTypeStr();
+              getVectorElementType()->getMangledTypeStr(HandleUnknown);
   else
-    Result += EVT::getEVT(const_cast<Type*>(this)).getEVTString();
+    Result +=
+        EVT::getEVT(const_cast<Type *>(this), HandleUnknown).getEVTString();
   return Result;
 }
 
