@@ -132,13 +132,14 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
 
   if (auto *C = dyn_cast<CallInst>(U.getUser())) {
     Function *Callee = C->getCalledFunction();
-    Argument *A = nullptr;
 
-    if (U.getOperandNo() < Callee->arg_size()) {
-      A = &Callee->arg_begin()[U.getOperandNo()];
-    }
+    if (!Callee || !Callee->isStaged() ||
+        Callee->arg_size() <= U.getOperandNo())
+      return;
 
-    if (Callee && Callee->isStaged() && A && A->getStage() < IncomingStage) {
+    Argument *A = &Callee->arg_begin()[U.getOperandNo()];
+
+    if (A->getStage() < IncomingStage) {
       Ctx.diagnose(DiagnosticInfoBindingTime(
           DS_Note, *Callee, "Given the declared parameter %s of %s", A,
           A->getStage()));
@@ -149,9 +150,7 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
           "Inferred argument stage contradicts the declared parameter stage",
           C));
     }
-  }
-
-  if (auto *S = dyn_cast<StoreInst>(U.getUser())) {
+  } else if (auto *S = dyn_cast<StoreInst>(U.getUser())) {
     unsigned ObjectStage = getObjectStage(S->getPointerOperand());
     StringRef OpName = U.getOperandNo() == StoreInst::getPointerOperandIndex()
                            ? "pointer"
@@ -170,9 +169,7 @@ void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
           "Inferred " + OpName + " stage contradicts the object stage at store",
           S));
     }
-  }
-
-  if (auto *R = dyn_cast<ReturnInst>(U.getUser())) {
+  } else if (auto *R = dyn_cast<ReturnInst>(U.getUser())) {
     Function *F = R->getFunction();
 
     if (F->getReturnStage() < IncomingStage) {
