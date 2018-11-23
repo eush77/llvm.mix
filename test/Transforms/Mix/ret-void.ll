@@ -1,41 +1,42 @@
-; RUN: opt -S -mix %s -o - | FileCheck %s --implicit-check-not=define
+; RUN: opt -S -mix %s -o - \
+; RUN: | FileCheck %s --check-prefix=STAGE0 --implicit-check-not=define
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
-; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
+; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=STAGE1
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define void @f()
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* %context)
-; CHECK: call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext
-; CHECK: [[context:%.+]] = alloca i8*
-; CHECK: call %struct.LLVMOpaqueBuilder* @LLVMCreateBuilderInContext
-; CHECK: call %struct.LLVMOpaqueValue* @f.mix(i8** [[context]])
-; CHECK: call void @LLVMDisposeBuilder
+; STAGE0-LABEL: define void @f()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* %context)
+; STAGE0: call %struct.LLVMOpaqueModule* @LLVMModuleCreateWithNameInContext
+; STAGE0: [[context:%.+]] = alloca i8*
+; STAGE0: call %struct.LLVMOpaqueBuilder* @LLVMCreateBuilderInContext
+; STAGE0: call %struct.LLVMOpaqueValue* @f.mix(i8** [[context]])
+; STAGE0: call void @LLVMDisposeBuilder
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
-; CHECK-STAGE-LABEL: define void @f()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
+; STAGE1-LABEL: define void @f()
 define void @f() stage(1) {
-  ; CHECK: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction
-  ; CHECK: [[entry:%.+]] = call %struct.LLVMOpaqueBasicBlock* @LLVMAppendBasicBlockInContext(%struct.LLVMOpaqueContext* {{.*}}, %struct.LLVMOpaqueValue* [[function]],
-  ; CHECK: call void @LLVMPositionBuilderAtEnd(%struct.LLVMOpaqueBuilder* {{.*}}, %struct.LLVMOpaqueBasicBlock* [[entry]])
-  ; CHECK: call %struct.LLVMOpaqueValue* @LLVMBuildRetVoid
-  ; CHECK-STAGE-NEXT: ret void
+  ; STAGE0: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction
+  ; STAGE0: [[entry:%.+]] = call %struct.LLVMOpaqueBasicBlock* @LLVMAppendBasicBlockInContext(%struct.LLVMOpaqueContext* {{.*}}, %struct.LLVMOpaqueValue* [[function]],
+  ; STAGE0: call void @LLVMPositionBuilderAtEnd(%struct.LLVMOpaqueBuilder* {{.*}}, %struct.LLVMOpaqueBasicBlock* [[entry]])
+  ; STAGE0: call %struct.LLVMOpaqueValue* @LLVMBuildRetVoid
+  ; STAGE1-NEXT: ret void
   ret void
 }
 
-; CHECK-LABEL: define void @main()
+; STAGE0-LABEL: define void @main()
 define void @main() {
-  ; CHECK-NEXT: %context = call i8* @LLVMContextCreate()
+  ; STAGE0-NEXT: %context = call i8* @LLVMContextCreate()
   %context = call i8* @LLVMContextCreate()
-  ; CHECK-NEXT: [[context:%.+]] = bitcast i8* %context to %struct.LLVMOpaqueContext*
-  ; CHECK-NEXT: [[function:%.+]] = call %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* [[context]])
-  ; CHECK: %function = bitcast %struct.LLVMOpaqueValue* [[function]] to i8*
+  ; STAGE0-NEXT: [[context:%.+]] = bitcast i8* %context to %struct.LLVMOpaqueContext*
+  ; STAGE0-NEXT: [[function:%.+]] = call %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* [[context]])
+  ; STAGE0: %function = bitcast %struct.LLVMOpaqueValue* [[function]] to i8*
   %function = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void ()* @f to i8*), i8* %context)
-  ; CHECK-NEXT: call void @LLVMDumpValue(i8* %function)
+  ; STAGE0-NEXT: call void @LLVMDumpValue(i8* %function)
   call void @LLVMDumpValue(i8* %function)
-  ; CHECK-NEXT: call void @LLVMContextDispose(i8* %context)
+  ; STAGE0-NEXT: call void @LLVMContextDispose(i8* %context)
   call void @LLVMContextDispose(i8* %context)
-  ; CHECK-NEXT: ret void
+  ; STAGE0-NEXT: ret void
   ret void
 }
 

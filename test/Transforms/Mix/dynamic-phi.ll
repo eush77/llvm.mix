@@ -1,69 +1,70 @@
-; RUN: opt -S -mix %s -o - | FileCheck %s --implicit-check-not=define
+; RUN: opt -S -mix %s -o - \
+; RUN: | FileCheck %s --check-prefix=STAGE0 --implicit-check-not=define
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
-; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
+; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=STAGE1
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define stage(1) i32 @f()
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
-; CHECK-STAGE-LABEL: define i32 @f()
+; STAGE0-LABEL: define stage(1) i32 @f()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* %context)
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
+; STAGE1-LABEL: define i32 @f()
 define stage(1) i32 @f() stage(1) {
-; CHECK-STAGE-LABEL: entry:
+; STAGE1-LABEL: entry:
 entry:
-  ; CHECK-STAGE-NEXT: alloca
+  ; STAGE1-NEXT: alloca
   %box = alloca i32
-  ; CHECK-STAGE-NEXT: store
+  ; STAGE1-NEXT: store
   store i32 5, i32* %box
-  ; CHECK-STAGE-NEXT: load
+  ; STAGE1-NEXT: load
   %v.0 = load i32, i32* %box
-  ; CHECK-STAGE-NEXT: br {{.*}} %loop
+  ; STAGE1-NEXT: br {{.*}} %loop
   br label %loop
 
-; CHECK-STAGE-LABEL: loop:
+; STAGE1-LABEL: loop:
 loop:
-  ; CHECK-STAGE-NEXT: phi {{.*}} %entry {{.*}} %latch
+  ; STAGE1-NEXT: phi {{.*}} %entry {{.*}} %latch
   %v.1 = phi i32 [ %v.0, %entry ], [ %v.2, %latch ]
-  ; CHECK-STAGE-NEXT: trunc
+  ; STAGE1-NEXT: trunc
   %odd = trunc i32 %v.1 to i1
-  ; CHECK-STAGE-NEXT: br {{.*}} %increase, {{.*}} %decrease
+  ; STAGE1-NEXT: br {{.*}} %increase, {{.*}} %decrease
   br i1 %odd, label %increase, label %decrease
 
-; CHECK-STAGE-LABEL: increase:
+; STAGE1-LABEL: increase:
 increase:
-  ; CHECK-STAGE-NEXT: mul
+  ; STAGE1-NEXT: mul
   %triple = mul i32 %v.1, 3
-  ; CHECK-STAGE-NEXT: add
+  ; STAGE1-NEXT: add
   %triplep1 = add i32 %triple, 1
-  ; CHECK-STAGE-NEXT: br {{.*}} %latch
+  ; STAGE1-NEXT: br {{.*}} %latch
   br label %latch
 
-; CHECK-STAGE-LABEL: decrease:
+; STAGE1-LABEL: decrease:
 decrease:
-  ; CHECK-STAGE-NEXT: udiv
+  ; STAGE1-NEXT: udiv
   %half = udiv i32 %v.1, 2
-  ; CHECK-STAGE-NEXT: br {{.*}} %latch
+  ; STAGE1-NEXT: br {{.*}} %latch
   br label %latch
 
-; CHECK-STAGE-LABEL: latch:
+; STAGE1-LABEL: latch:
 latch:
-  ; CHECK-STAGE-NEXT: phi {{.*}} %increase {{.*}} %decrease
+  ; STAGE1-NEXT: phi {{.*}} %increase {{.*}} %decrease
   %v.2 = phi i32 [ %triplep1, %increase ], [ %half, %decrease ]
-  ; CHECK-STAGE-NEXT: icmp eq
+  ; STAGE1-NEXT: icmp eq
   %end = icmp eq i32 %v.2, 1
-  ; CHECK-STAGE-NEXT: br {{.*}} %exit, {{.*}} %loop
+  ; STAGE1-NEXT: br {{.*}} %exit, {{.*}} %loop
   br i1 %end, label %exit, label %loop
 
-; CHECK-STAGE-LABEL: exit:
+; STAGE1-LABEL: exit:
 exit:
-  ; CHECK-STAGE-NEXT: ret
+  ; STAGE1-NEXT: ret
   ret i32 %v.2
 }
 
-; CHECK-LABEL: define void @main()
+; STAGE0-LABEL: define void @main()
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  ; CHECK: call %struct.LLVMOpaqueValue* @f.main
+  ; STAGE0: call %struct.LLVMOpaqueValue* @f.main
   %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ()* @f to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %f)
   call void @LLVMContextDispose(i8* %c)

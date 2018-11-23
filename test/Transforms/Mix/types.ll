@@ -1,129 +1,129 @@
-; RUN: opt -S -mix %s -o - | FileCheck %s
+; RUN: opt -S -mix %s -o - | FileCheck %s --check-prefix=STAGE0
 
 ; NOTE: Using O1 here because the interpreter does not support constants of
 ; type `half'.
 ;
 ; RUN: opt -S -mix -O1 %s -o - | lli -force-interpreter - 2>&1 \
-; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
+; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=STAGE1
 ; RUN: opt -S -mix -O1 %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @i1.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define i1 @i1()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @i1.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define i1 @i1()
 define i1 @i1() stage(1) {
-  ; CHECK: LLVMInt1TypeInContext
-  ; CHECK-STAGE: ret i1 false
+  ; STAGE0: LLVMInt1TypeInContext
+  ; STAGE1: ret i1 false
   ret i1 false
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @i44.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define i44 @i44()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @i44.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define i44 @i44()
 define i44 @i44() stage(1) {
-  ; CHECK: LLVMIntTypeInContext
-  ; CHECK-STAGE: ret i44 -8796093022208
+  ; STAGE0: LLVMIntTypeInContext
+  ; STAGE1: ret i44 -8796093022208
   ret i44 8796093022208         ; 2^43
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @i256.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define i256 @i256()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @i256.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define i256 @i256()
 define i256 @i256() stage(1) {
-  ; CHECK: LLVMIntTypeInContext
-  ; CHECK-STAGE: ret i256 -57896044618658097711785492504343953926634992332820282019728792003956564819968
+  ; STAGE0: LLVMIntTypeInContext
+  ; STAGE1: ret i256 -57896044618658097711785492504343953926634992332820282019728792003956564819968
   ret i256 57896044618658097711785492504343953926634992332820282019728792003956564819968 ; 2^255
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @half.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define half @half()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @half.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define half @half()
 define half @half() stage(1) {
-  ; CHECK: LLVMHalfTypeInContext
-  ; CHECK-STAGE: ret half 0xH0123
+  ; STAGE0: LLVMHalfTypeInContext
+  ; STAGE1: ret half 0xH0123
   ret half 0xH123
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @double.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define double @double()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @double.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define double @double()
 define double @double() stage(1) {
-  ; CHECK: LLVMDoubleTypeInContext
-  ; CHECK-STAGE: ret double 1.25
+  ; STAGE0: LLVMDoubleTypeInContext
+  ; STAGE1: ret double 1.25
   ret double 1.25
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @fp128.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define fp128 @fp128()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @fp128.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define fp128 @fp128()
 define fp128 @fp128() stage(1) {
-  ; CHECK: LLVMFP128TypeInContext
-  ; CHECK-STAGE: ret fp128 0xL{{0+}}AD
+  ; STAGE0: LLVMFP128TypeInContext
+  ; STAGE1: ret fp128 0xL{{0+}}AD
   ret fp128 0xL0AD
 }
 
 %opaque = type opaque
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @struct.opaque.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: source_filename = "struct.opaque.module"
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.opaque.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: source_filename = "struct.opaque.module"
 define %opaque* @struct.opaque() stage(1) {
-  ; CHECK: LLVMStructCreateNamed
-  ; CHECK-NOT: LLVMStructSetBody
-  ; CHECK-STAGE: %opaque = type opaque
-  ; CHECK-STAGE: define %opaque* @struct.opaque()
-  ; CHECK-STAGE: ret %opaque* null
+  ; STAGE0: LLVMStructCreateNamed
+  ; STAGE0-NOT: LLVMStructSetBody
+  ; STAGE1: %opaque = type opaque
+  ; STAGE1: define %opaque* @struct.opaque()
+  ; STAGE1: ret %opaque* null
   ret %opaque* null
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @struct.empty.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define {} @struct.empty()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.empty.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define {} @struct.empty()
 define {} @struct.empty() stage(1) {
-  ; CHECK-NOT: LLVMStructCreateNamed
-  ; CHECK: LLVMStructTypeInContext
-  ; CHECK-NOT: LLVMStructCreateNamed
-  ; CHECK-STAGE: ret {} zeroinitializer
+  ; STAGE0-NOT: LLVMStructCreateNamed
+  ; STAGE0: LLVMStructTypeInContext
+  ; STAGE0-NOT: LLVMStructCreateNamed
+  ; STAGE1: ret {} zeroinitializer
   ret {} {}
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @struct.literal.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define { i32, i32 } @struct.literal()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.literal.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define { i32, i32 } @struct.literal()
 define { i32, i32 } @struct.literal() stage(1) {
-  ; CHECK-NOT: LLVMStructCreateNamed
-  ; CHECK: LLVMStructTypeInContext
-  ; CHECK-NOT: LLVMStructCreateNamed
-  ; CHECK-STAGE: ret { i32, i32 } { i32 1, i32 2 }
+  ; STAGE0-NOT: LLVMStructCreateNamed
+  ; STAGE0: LLVMStructTypeInContext
+  ; STAGE0-NOT: LLVMStructCreateNamed
+  ; STAGE1: ret { i32, i32 } { i32 1, i32 2 }
   ret { i32, i32 } { i32 1, i32 2 }
 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @struct.packed.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define <{ i32, i32 }> @struct.packed()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.packed.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define <{ i32, i32 }> @struct.packed()
 define <{ i32, i32 }> @struct.packed() stage(1) {
-  ; CHECK-NOT: LLVMStructCreateNamed
-  ; CHECK: LLVMStructTypeInContext
-  ; CHECK-NOT: LLVMStructCreateNamed
-  ; CHECK-STAGE: ret <{ i32, i32 }> <{ i32 1, i32 2 }>
+  ; STAGE0-NOT: LLVMStructCreateNamed
+  ; STAGE0: LLVMStructTypeInContext
+  ; STAGE0-NOT: LLVMStructCreateNamed
+  ; STAGE1: ret <{ i32, i32 }> <{ i32 1, i32 2 }>
   ret <{ i32, i32 }> <{ i32 1, i32 2 }>
 }
 
 %struct = type { i32, i32 }
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @struct.named.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: source_filename = "struct.named.module"
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.named.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: source_filename = "struct.named.module"
 define %struct @struct.named() stage(1) {
-  ; CHECK: LLVMStructCreateNamed
-  ; CHECK: LLVMStructSetBody
-  ; CHECK-STAGE: %struct = type  { i32, i32 }
-  ; CHECK-STAGE: define %struct @struct.named()
-  ; CHECK-STAGE: ret %struct { i32 1, i32 2 }
+  ; STAGE0: LLVMStructCreateNamed
+  ; STAGE0: LLVMStructSetBody
+  ; STAGE1: %struct = type  { i32, i32 }
+  ; STAGE1: define %struct @struct.named()
+  ; STAGE1: ret %struct { i32 1, i32 2 }
   ret %struct { i32 1, i32 2 }
 }
 
 declare i32 @llvm.read_register.i32(metadata)
 
-; CHECK-LABEL: define private %struct.LLVMOpaqueValue* @metadata.main(%struct.LLVMOpaqueContext* %context)
-; CHECK-STAGE-LABEL: define i32 @metadata()
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @metadata.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: define i32 @metadata()
 define stage(1) i32 @metadata() stage(1) {
-  ; CHECK: LLVMMetadataTypeInContext
-  ; CHECK-STAGE: call i32 @llvm.read_register.i32(metadata !0)
+  ; STAGE0: LLVMMetadataTypeInContext
+  ; STAGE1: call i32 @llvm.read_register.i32(metadata !0)
   %x = tail call i32 @llvm.read_register.i32(metadata !0)
   ret i32 %x
 }
 
-; CHECK-STAGE: !0 = !{!"sp\00"}
+; STAGE1: !0 = !{!"sp\00"}
 !0 = !{!"sp\00"}
 
 define void @main() {

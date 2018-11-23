@@ -1,45 +1,45 @@
-; RUN: opt -S -mix %s -o - | FileCheck %s
+; RUN: opt -S -mix %s -o - | FileCheck %s --check-prefix=STAGE0
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
-; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
+; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=STAGE1
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK: define private %struct.LLVMOpaqueValue* @power-iter.main(%struct.LLVMOpaqueContext* %context, i32 %n)
-; CHECK: define private %struct.LLVMOpaqueValue* @power-iter.mix(i8** %mix.context, i32 %n)
-; CHECK-STAGE-LABEL: define i32 @power-iter(i32 %x)
+; STAGE0: define private %struct.LLVMOpaqueValue* @power-iter.main(%struct.LLVMOpaqueContext* %context, i32 %n)
+; STAGE0: define private %struct.LLVMOpaqueValue* @power-iter.mix(i8** %mix.context, i32 %n)
+; STAGE1-LABEL: define i32 @power-iter(i32 %x)
 define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n) stage(1) {
-; CHECK: entry:
+; STAGE0: entry:
 entry:
-  ; CHECK: br {{.*}} %check-next
+  ; STAGE0: br {{.*}} %check-next
   br label %check-next
 
-; CHECK: check-next:
+; STAGE0: check-next:
 check-next:
-  ; CHECK: %res.0 = phi
+  ; STAGE0: %res.0 = phi
   %res.0 = phi i32 [ 1, %entry ], [ %res.1, %next ]
-  ; CHECK: %n.0 = phi
+  ; STAGE0: %n.0 = phi
   %n.0 = phi i32 [ %n, %entry ], [ %n.1, %next ]
-  ; CHECK: %zerop = icmp eq
+  ; STAGE0: %zerop = icmp eq
   %zerop = icmp eq i32 %n.0, 0
-  ; CHECK: br {{.*}} %exit, {{.*}} %next
+  ; STAGE0: br {{.*}} %exit, {{.*}} %next
   br i1 %zerop, label %exit, label %next
 
-; CHECK: next:
+; STAGE0: next:
 next:
-  ; CHECK-STAGE: [[p1:%res\.[0-9]+]] = mul i32 1, %x
-  ; CHECK-STAGE: [[p2:%res\.[0-9]+]] = mul i32 [[p1]], %x
-  ; CHECK-STAGE: [[p3:%res\.[0-9]+]] = mul i32 [[p2]], %x
-  ; CHECK-STAGE: [[p4:%res\.[0-9]+]] = mul i32 [[p3]], %x
-  ; CHECK-STAGE: [[p5:%res\.[0-9]+]] = mul i32 [[p4]], %x
+  ; STAGE1: [[p1:%res\.[0-9]+]] = mul i32 1, %x
+  ; STAGE1: [[p2:%res\.[0-9]+]] = mul i32 [[p1]], %x
+  ; STAGE1: [[p3:%res\.[0-9]+]] = mul i32 [[p2]], %x
+  ; STAGE1: [[p4:%res\.[0-9]+]] = mul i32 [[p3]], %x
+  ; STAGE1: [[p5:%res\.[0-9]+]] = mul i32 [[p4]], %x
   %res.1 = mul i32 %res.0, %x
-  ; CHECK: %n.1 = sub
+  ; STAGE0: %n.1 = sub
   %n.1 = sub i32 %n.0, 1
-  ; CHECK: br {{.*}} %check-next
+  ; STAGE0: br {{.*}} %check-next
   br label %check-next
 
-; CHECK: exit:
+; STAGE0: exit:
 exit:
-  ; CHECK-STAGE: ret
+  ; STAGE1: ret
   ret i32 %res.0
 }
 

@@ -1,11 +1,11 @@
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
-; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=CHECK-STAGE
+; RUN: | FileCheck %s --implicit-check-not=define -check-prefix=STAGE1
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; CHECK-STAGE-LABEL: define void @f()
+; STAGE1-LABEL: define void @f()
 define void @f() stage(1) {
-  ; CHECK-STAGE: unreachable
+  ; STAGE1: unreachable
   unreachable
 }
 
