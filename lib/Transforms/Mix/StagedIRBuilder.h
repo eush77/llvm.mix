@@ -765,6 +765,24 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
   case Type::PointerTyID: {
     PointerType *Ty = cast<PointerType>(StaticV->getType());
 
+    // Declare external functions instead of taking their address.
+    // This is required for intrinsic calls to work, and otherwise makes for
+    // more comprehensible code.
+    if (Ty->getElementType()->isFunctionTy()) {
+      if (auto *F = dyn_cast<Function>(StaticV->stripPointerCasts())) {
+        if (F->hasExternalLinkage()) {
+          StagedV = C.getFunction(F);
+
+          if (StaticV->getType() != F->getType())
+            StagedV = B.CreateCall(getBuildPointerCastFn(getModule()),
+                                   {C.getBuilder(), StagedV,
+                                    C.getType(StaticV->getType()),
+                                    stage(StaticV->getName())});
+          break;
+        }
+      }
+    }
+
     Value *IntPtr =
         B.CreatePtrToInt(StaticV, getUnsignedLongLongIntTy(B.getContext()));
 

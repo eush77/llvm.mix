@@ -31,6 +31,7 @@
 namespace llvm {
 
 class BasicBlock;
+class Function;
 class Instruction;
 class LLVMContext;
 class Module;
@@ -43,6 +44,7 @@ enum ValueDescTag {
   VDT_Context,
   VDT_Builder,
   VDT_Module,
+  VDT_Function,
   VDT_Type,
 };
 
@@ -52,6 +54,7 @@ using ValueDesc =
                    PointerSumTypeMember<VDT_Context, PointerEmbeddedInt<char>>,
                    PointerSumTypeMember<VDT_Builder, PointerEmbeddedInt<char>>,
                    PointerSumTypeMember<VDT_Module, PointerEmbeddedInt<char>>,
+                   PointerSumTypeMember<VDT_Function, Function *>,
                    PointerSumTypeMember<VDT_Type, Type *>>;
 
 // A mapping from sequential unsigned indices to descriptors of requested
@@ -79,7 +82,8 @@ private:
 
   Value *build(Value *DynContext, StringRef ModuleID);
   Value *buildEntry(ValueDesc);
-  Value *buildType(Type *, StringRef Name = "");
+  Value *buildModule() { return buildEntry(ValueDesc::create<VDT_Module>({})); }
+  Value *buildType(Type *);
   Value *buildContext() {
     return buildEntry(ValueDesc::create<VDT_Context>({}));
   }
@@ -116,31 +120,44 @@ public:
   void dispose();
 
   // Get staged LLVMContextRef.
-  Value *getContext() { return getValue(ValueDesc::create<VDT_Context>({})); }
+  Instruction *getContext() {
+    return getValue(ValueDesc::create<VDT_Context>({}));
+  }
 
   // Get staged LLVMBuilderRef.
-  Value *getBuilder() { return getValue(ValueDesc::create<VDT_Builder>({})); }
+  Instruction *getBuilder() {
+    return getValue(ValueDesc::create<VDT_Builder>({}));
+  }
 
   // Get staged LLVMModuleRef.
-  Value *getModule() { return getValue(ValueDesc::create<VDT_Module>({})); }
+  Instruction *getModule() {
+    return getValue(ValueDesc::create<VDT_Module>({}));
+  }
+
+  // Get staged declared function.
+  Instruction *getFunction(Function *F) {
+    return getValue(ValueDesc::create<VDT_Function>(F));
+  }
 
   // Get staged LLVMTypeRef.
-  Value *getType(Type *Ty) { return getValue(ValueDesc::create<VDT_Type>(Ty)); }
+  Instruction *getType(Type *Ty) {
+    return getValue(ValueDesc::create<VDT_Type>(Ty));
+  }
 
 private:
   // Resolve value descriptor in the context table.
-  Value *getValue(ValueDesc VD);
-  Value *getValue(ValueDesc VD, unsigned Index);
+  Instruction *getValue(ValueDesc VD);
+  Instruction *getValue(ValueDesc VD, unsigned Index);
 
   // Same as `getValue', but return null if descriptor is not in the table.
-  Value *getExistingValue(ValueDesc VD);
+  Instruction *getExistingValue(ValueDesc VD);
 
   MixContextTable &T;
   Value *TP;
   IRBuilder<> B;
 
   // Map of available values
-  DenseMap<ValueDesc, Value *> Values;
+  DenseMap<ValueDesc, Instruction *> Values;
 };
 
 } // namespace mix

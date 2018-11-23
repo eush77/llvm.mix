@@ -54,6 +54,9 @@ Type *getType(LLVMContext &C, ValueDesc VD) {
   case VDT_Module:
     return getModulePtrTy(C);
 
+  case VDT_Function:
+    return getValuePtrTy(C);
+
   case VDT_Type:
     return getTypePtrTy(C);
   }
@@ -75,6 +78,9 @@ std::string getName(ValueDesc VD) {
 
   case VDT_Module:
     return "module";
+
+  case VDT_Function:
+    return "function." + VD.get<VDT_Function>()->getName().str();
 
   case VDT_Type:
     return "type." + VD.get<VDT_Type>()->getMangledTypeStr(true);
@@ -172,8 +178,20 @@ Value *MixContextTable::buildEntry(ValueDesc VD) {
                       getName(VD));
     break;
 
+  case VDT_Function: {
+    Function *F = VD.get<VDT_Function>();
+
+    V = B->CreateCall(
+        getAddFunctionFn(getModule()),
+        {buildModule(),
+         B->CreateGlobalStringPtr(F->getName(), F->getName() + ".name"),
+         buildType(F->getFunctionType())},
+        getName(VD));
+    break;
+  }
+
   case VDT_Type:
-    V = buildType(VD.get<VDT_Type>(), getName(VD));
+    V = buildType(VD.get<VDT_Type>());
     break;
   }
 
@@ -181,11 +199,14 @@ Value *MixContextTable::buildEntry(ValueDesc VD) {
   return V;
 }
 
-Value *MixContextTable::buildType(Type *Ty, StringRef Name) {
-  Value *&V = Values[ValueDesc::create<VDT_Type>(Ty)];
+Value *MixContextTable::buildType(Type *Ty) {
+  auto VD = ValueDesc::create<VDT_Type>(Ty);
+  Value *&V = Values[VD];
 
   if (V)
     return V;
+
+  std::string Name = getName(VD);
 
   switch (Ty->getTypeID()) {
   case Type::VoidTyID:
@@ -359,18 +380,18 @@ void MixContext::dispose() {
     B.CreateCall(getDisposeBuilderFn(*B.GetInsertBlock()->getModule()), DB);
 }
 
-Value *MixContext::getValue(ValueDesc VD) {
-  Value *&V = Values[VD];
+Instruction *MixContext::getValue(ValueDesc VD) {
+  Instruction *&V = Values[VD];
   return V ? V : V = getValue(VD, T.getIndex(VD));
 }
 
-Value *MixContext::getValue(ValueDesc VD, unsigned Index) {
-  return B.CreateBitCast(
+Instruction *MixContext::getValue(ValueDesc VD, unsigned Index) {
+  return cast<Instruction>(B.CreateBitCast(
       B.CreateLoad(B.CreateGEP(TP, B.getInt32(Index)), getName(VD)),
-      ::getType(B.getContext(), VD), getName(VD));
+      ::getType(B.getContext(), VD), getName(VD)));
 }
 
-Value *MixContext::getExistingValue(ValueDesc VD) {
+Instruction *MixContext::getExistingValue(ValueDesc VD) {
   if (auto Index = T.getExistingIndex(VD))
     return getValue(VD, *Index);
   else

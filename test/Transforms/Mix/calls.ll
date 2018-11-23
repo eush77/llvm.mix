@@ -3,6 +3,12 @@
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
+; CHECK-STAGE-LABEL: declare i32 @e(i32)
+define i32 @e(i32 %x) {
+  %y = add i32 %x, 1
+  ret i32 %y
+}
+
 ; CHECK-STAGE-LABEL: define i32 @g()
 define stage(1) i32 @g(i32 %x) stage(1) {
   ; CHECK-STAGE-NEXT: %t0 = call i32 @e(i32 4)
@@ -15,12 +21,6 @@ define stage(1) i32 @g(i32 %x) stage(1) {
   %t3 = call i32 @f(i32 %t2, i32 6)
   ; CHECK-STAGE: ret i32 %t3
   ret i32 %t3
-}
-
-; CHECK-STAGE-LABEL: declare i32 @e(i32)
-define i32 @e(i32 %x) {
-  %y = add i32 %x, 1
-  ret i32 %y
 }
 
 define internal i32 @i(i32 %x) {

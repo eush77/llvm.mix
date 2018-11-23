@@ -511,18 +511,7 @@ bool Mix::buildCall(CallInst &Call) const {
 
   Function &Callee = *Call.getCalledFunction();
 
-  if (!Callee.isStaged()) {
-    if (!Callee.hasExternalLinkage())
-      return false;
-
-    SB->setCalledValue(SB->stage(&Call),
-                       SB->createFunction(Callee.getFunctionType(),
-                                          Callee.getLinkage(), Callee.getName(),
-                                          Callee.getName()));
-    return true;
-  }
-
-  if (Callee.getLastStage() < SourceF->getLastStage())
+  if (!Callee.isStaged() || Callee.getLastStage() < SourceF->getLastStage())
     return false;
 
   const StagedFunctionInfo &CalleeInfo = FunctionMap.lookup(&Callee);
