@@ -122,6 +122,10 @@ PointerType *mix::getContextPtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueContext");
 }
 
+PointerType *mix::getMetadataPtrTy(LLVMContext &Context) {
+  return getOpaquePointerType(Context, "struct.LLVMOpaqueMetadata");
+}
+
 PointerType *mix::getModulePtrTy(LLVMContext &Context) {
   return getOpaquePointerType(Context, "struct.LLVMOpaqueModule");
 }

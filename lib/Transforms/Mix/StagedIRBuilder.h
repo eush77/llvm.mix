@@ -120,7 +120,6 @@ private:
   void stageInstructionMetadata(Instruction *StagedInst, Instruction *Inst);
   Instruction *stageMetadata(Metadata *);
   Instruction *stageMDNode(MDNode *);
-  Instruction *stageMDString(MDString *);
 
   // Register a callback to be called when the value is staged. If the value
   // has already been staged, call it immediately.
@@ -498,8 +497,23 @@ void StagedIRBuilder<IRBuilder>::stageInstructionMetadata(
 template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageMetadata(Metadata *MD) {
   switch (MD->getMetadataID()) {
-  case Metadata::MDStringKind:
-    return stageMDString(cast<MDString>(MD));
+  case Metadata::ConstantAsMetadataKind:
+  case Metadata::LocalAsMetadataKind: {
+    auto *V = cast<ValueAsMetadata>(MD)->getValue();
+    Value *MD = B.CreateCall(getValueAsMetadataFn(getModule()), {stage(V)});
+
+    return B.CreateCall(getMetadataAsValueFn(getModule()),
+                        {C.getContext(), MD});
+  }
+
+  case Metadata::MDStringKind: {
+    auto *MDS = cast<MDString>(MD);
+
+    return B.CreateCall(
+        getMDStringInContextFn(getModule()),
+        {C.getContext(), stage(MDS->getString()),
+         ConstantInt::get(getUnsignedIntTy(B.getContext()), MDS->getLength())});
+  }
 
   case Metadata::MDTupleKind:
     return stageMDNode(cast<MDNode>(MD));
@@ -523,14 +537,6 @@ Instruction *StagedIRBuilder<IRBuilder>::stageMDNode(MDNode *MDN) {
                       {C.getContext(), Vals,
                        ConstantInt::get(getUnsignedIntTy(B.getContext()),
                                         MDN->getNumOperands())});
-}
-
-template <typename IRBuilder>
-Instruction *StagedIRBuilder<IRBuilder>::stageMDString(MDString *MDS) {
-  return B.CreateCall(
-      getMDStringInContextFn(getModule()),
-      {C.getContext(), stage(MDS->getString()),
-       ConstantInt::get(getUnsignedIntTy(B.getContext()), MDS->getLength())});
 }
 
 template <typename IRBuilder>

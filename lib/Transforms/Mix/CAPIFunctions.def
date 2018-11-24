@@ -42,6 +42,7 @@
 #define IR_BASICBLOCK mix::getBasicBlockPtrTy(CONTEXT)
 #define IR_BUILDER mix::getBuilderPtrTy(CONTEXT)
 #define IR_CONTEXT mix::getContextPtrTy(CONTEXT)
+#define IR_METADATA mix::getMetadataPtrTy(CONTEXT)
 #define IR_MODULE mix::getModulePtrTy(CONTEXT)
 #define IR_TYPE mix::getTypePtrTy(CONTEXT)
 #define IR_VALUE mix::getValuePtrTy(CONTEXT)
@@ -80,6 +81,7 @@ HANDLE_API_FUNCTION(GetParam, IR_VALUE, IR_VALUE, UINT)
 HANDLE_API_FUNCTION(GetUndef, IR_VALUE, IR_TYPE)
 HANDLE_API_FUNCTION(HalfTypeInContext, IR_TYPE, IR_CONTEXT)
 HANDLE_API_FUNCTION(IntTypeInContext, IR_TYPE, IR_CONTEXT, UINT)
+HANDLE_API_FUNCTION(MetadataAsValue, IR_VALUE, IR_CONTEXT, IR_METADATA)
 HANDLE_API_FUNCTION(MetadataTypeInContext, IR_TYPE, IR_CONTEXT)
 HANDLE_API_FUNCTION(MDNodeInContext, IR_VALUE, IR_CONTEXT,
                     IR_VALUE->getPointerTo(), UINT)
@@ -97,5 +99,6 @@ HANDLE_API_FUNCTION(StructSetBody, VOID, IR_TYPE, IR_TYPE->getPointerTo(), UINT,
                     LLVMBOOL)
 HANDLE_API_FUNCTION(StructTypeInContext, IR_TYPE, IR_CONTEXT,
                     IR_TYPE->getPointerTo(), UINT, LLVMBOOL)
+HANDLE_API_FUNCTION(ValueAsMetadata, IR_METADATA, IR_VALUE)
 HANDLE_API_FUNCTION(VoidTypeInContext, IR_TYPE, IR_CONTEXT)
 HANDLE_API_FUNCTION(X86FP80TypeInContext, IR_TYPE, IR_CONTEXT)

@@ -41,6 +41,7 @@ IntegerType *getOpcodeTy(LLVMContext &);
 PointerType *getBasicBlockPtrTy(LLVMContext &);
 PointerType *getBuilderPtrTy(LLVMContext &);
 PointerType *getContextPtrTy(LLVMContext &);
+PointerType *getMetadataPtrTy(LLVMContext &);
 PointerType *getModulePtrTy(LLVMContext &);
 PointerType *getTypePtrTy(LLVMContext &);
 PointerType *getValuePtrTy(LLVMContext &);
