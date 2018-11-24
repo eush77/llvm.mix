@@ -27,6 +27,8 @@
 #include "llvm/IR/Value.h"
 
 #include <cassert>
+#include <string>
+#include <vector>
 
 namespace llvm {
 
@@ -39,28 +41,50 @@ class PointerType;
 
 namespace mix {
 
-enum ValueDescTag {
-  VDT_None,
-  VDT_Context,
-  VDT_Builder,
-  VDT_Module,
-  VDT_Function,
-  VDT_Type,
-};
+// Common base for classes working with value descriptors
+class MixContextBase {
+public:
+  enum ValueDescTag {
+    VDT_None,
+    VDT_Context,
+    VDT_Builder,
+    VDT_Module,
+    VDT_Function,
+    VDT_MDKindID,
+    VDT_Type,
+  };
 
-using ValueDesc =
-    PointerSumType<ValueDescTag,
-                   PointerSumTypeMember<VDT_None, PointerEmbeddedInt<char>>,
-                   PointerSumTypeMember<VDT_Context, PointerEmbeddedInt<char>>,
-                   PointerSumTypeMember<VDT_Builder, PointerEmbeddedInt<char>>,
-                   PointerSumTypeMember<VDT_Module, PointerEmbeddedInt<char>>,
-                   PointerSumTypeMember<VDT_Function, Function *>,
-                   PointerSumTypeMember<VDT_Type, Type *>>;
+  using ValueDesc = PointerSumType<
+      ValueDescTag, PointerSumTypeMember<VDT_None, PointerEmbeddedInt<char>>,
+      PointerSumTypeMember<VDT_Context, PointerEmbeddedInt<char>>,
+      PointerSumTypeMember<VDT_Builder, PointerEmbeddedInt<char>>,
+      PointerSumTypeMember<VDT_Module, PointerEmbeddedInt<char>>,
+      PointerSumTypeMember<VDT_Function, Function *>,
+      PointerSumTypeMember<VDT_MDKindID, PointerEmbeddedInt<unsigned>>,
+      PointerSumTypeMember<VDT_Type, Type *>>;
+
+  explicit MixContextBase(LLVMContext &C);
+
+  // Get IR type for value descriptor
+  Type *getType(ValueDesc VD) const;
+
+  // Get a name that can be used for IR values generated from value descriptor
+  std::string getName(ValueDesc VD) const;
+
+  // Get metadata kind name from kind ID
+  StringRef getMDKindName(unsigned KindID) const { return MDKindNames[KindID]; }
+
+private:
+  LLVMContext &C;
+  std::vector<StringRef> MDKindNames;
+};
 
 // A mapping from sequential unsigned indices to descriptors of requested
 // values
-class MixContextTable {
+class MixContextTable : public MixContextBase {
 public:
+  explicit MixContextTable(LLVMContext &C) : MixContextBase(C) {}
+
   // Find descriptor in the context table.
   Optional<unsigned> getExistingIndex(ValueDesc) const;
 
@@ -88,7 +112,7 @@ private:
     return buildEntry(ValueDesc::create<VDT_Context>({}));
   }
 
-  IRBuilder<> *B;
+  IRBuilder<> *B = nullptr;
 
   // Descriptor table
   MapVector<ValueDesc, unsigned> Desc;
@@ -99,16 +123,16 @@ private:
 
 // A pair of static and dynamic context table pointers. This class provides
 // dynamic access to context table entries.
-class MixContext {
+class MixContext : public MixContextBase {
 public:
   MixContext(MixContextTable &T, Value *TP, Instruction *InsertBefore)
-      : T(T), TP(TP), B(InsertBefore) {
+      : MixContextBase(TP->getContext()), T(T), TP(TP), B(InsertBefore) {
     assert(TP->getType() == MixContextTable::getTablePtrTy(TP->getContext()) &&
            "Not a context table");
   }
 
   MixContext(MixContextTable &T, Value *TP, BasicBlock *InsertAtEnd)
-      : T(T), TP(TP), B(InsertAtEnd) {
+      : MixContextBase(TP->getContext()), T(T), TP(TP), B(InsertAtEnd) {
     assert(TP->getType() == MixContextTable::getTablePtrTy(TP->getContext()) &&
            "Not a context table");
   }
@@ -139,12 +163,19 @@ public:
     return getValue(ValueDesc::create<VDT_Function>(F));
   }
 
+  // Get metadata kind ID in the staged context.
+  Instruction *getMDKindID(unsigned KindID) {
+    return getValue(ValueDesc::create<VDT_MDKindID>(KindID));
+  }
+
   // Get staged LLVMTypeRef.
   Instruction *getType(Type *Ty) {
     return getValue(ValueDesc::create<VDT_Type>(Ty));
   }
 
 private:
+  using MixContextBase::getType;
+
   // Resolve value descriptor in the context table.
   Instruction *getValue(ValueDesc VD);
   Instruction *getValue(ValueDesc VD, unsigned Index);
@@ -162,20 +193,23 @@ private:
 
 } // namespace mix
 
-template <> struct DenseMapInfo<mix::ValueDesc> {
-  static mix::ValueDesc getEmptyKey() {
-    return mix::ValueDesc::create<mix::VDT_None>('\0');
+template <> struct DenseMapInfo<mix::MixContextBase::ValueDesc> {
+  static mix::MixContextBase::ValueDesc getEmptyKey() {
+    return mix::MixContextBase::ValueDesc::create<
+        mix::MixContextBase::VDT_None>('\0');
   }
 
-  static mix::ValueDesc getTombstoneKey() {
-    return mix::ValueDesc::create<mix::VDT_None>('\xFF');
+  static mix::MixContextBase::ValueDesc getTombstoneKey() {
+    return mix::MixContextBase::ValueDesc::create<
+        mix::MixContextBase::VDT_None>('\xFF');
   }
 
-  static unsigned getHashValue(mix::ValueDesc CGD) {
+  static unsigned getHashValue(mix::MixContextBase::ValueDesc CGD) {
     return static_cast<unsigned>(CGD.getOpaqueValue());
   }
 
-  static bool isEqual(mix::ValueDesc Left, mix::ValueDesc Right) {
+  static bool isEqual(mix::MixContextBase::ValueDesc Left,
+                      mix::MixContextBase::ValueDesc Right) {
     return Left == Right;
   }
 };

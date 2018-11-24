@@ -117,6 +117,7 @@ private:
   Instruction *stageBasicBlock(BasicBlock *Block);
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
+  void stageInstructionMetadata(Instruction *StagedInst, Instruction *Inst);
   Instruction *stageMetadata(Metadata *);
   Instruction *stageMDNode(MDNode *);
   Instruction *stageMDString(MDString *);
@@ -469,11 +470,29 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
 
   assert(BuilderName && "Builder name is not set");
 
-  return B.CreateCall(
+  Instruction *StagedInst = B.CreateCall(
       getModule().getOrInsertFunction(
           "LLVMBuild"s + BuilderName,
           FunctionType::get(getValuePtrTy(B.getContext()), ParamTypes, false)),
       Arguments, Inst->getName());
+  stageInstructionMetadata(StagedInst, Inst);
+  return StagedInst;
+}
+
+template <typename IRBuilder>
+void StagedIRBuilder<IRBuilder>::stageInstructionMetadata(
+    Instruction *StagedInst, Instruction *Inst) {
+  SmallVector<std::pair<unsigned, MDNode *>, 2> MDs;
+  Inst->getAllMetadata(MDs);
+
+  for (auto &P : MDs) {
+    unsigned KindID;
+    MDNode *MDN;
+    std::tie(KindID, MDN) = P;
+
+    B.CreateCall(getSetMetadataFn(getModule()),
+                 {StagedInst, C.getMDKindID(KindID), stageMetadata(MDN)});
+  }
 }
 
 template <typename IRBuilder>

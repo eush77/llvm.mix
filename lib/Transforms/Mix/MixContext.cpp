@@ -30,17 +30,24 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SaveAndRestore.h"
 
+#include <algorithm>
 #include <cassert>
+#include <iterator>
 #include <string>
 #include <tuple>
 
 using namespace llvm;
 using namespace mix;
 
-namespace {
+MixContextBase::MixContextBase(LLVMContext &C) : C(C) {
+  SmallVector<StringRef, 32> MDKindNames;
 
-// Get IR type for value descriptor.
-Type *getType(LLVMContext &C, ValueDesc VD) {
+  C.getMDKindNames(MDKindNames);
+  std::copy(MDKindNames.begin(), MDKindNames.end(),
+            std::back_inserter(this->MDKindNames));
+}
+
+Type *MixContextBase::getType(ValueDesc VD) const {
   switch (VD.getTag()) {
   case VDT_None:
     llvm_unreachable("VDT_None ValueDesc has no IR type");
@@ -57,6 +64,9 @@ Type *getType(LLVMContext &C, ValueDesc VD) {
   case VDT_Function:
     return getValuePtrTy(C);
 
+  case VDT_MDKindID:
+    return getUnsignedIntTy(C);
+
   case VDT_Type:
     return getTypePtrTy(C);
   }
@@ -64,8 +74,7 @@ Type *getType(LLVMContext &C, ValueDesc VD) {
   llvm_unreachable("Unhandled ValueDesc");
 }
 
-// Get a name that can be used for IR values generated from value descriptor.
-std::string getName(ValueDesc VD) {
+std::string MixContextBase::getName(ValueDesc VD) const {
   switch (VD.getTag()) {
   case VDT_None:
     llvm_unreachable("Generating name for VDT_None ValueDesc");
@@ -82,14 +91,15 @@ std::string getName(ValueDesc VD) {
   case VDT_Function:
     return "function." + VD.get<VDT_Function>()->getName().str();
 
+  case VDT_MDKindID:
+    return "metadata." + MDKindNames[VD.get<VDT_MDKindID>()].str();
+
   case VDT_Type:
     return "type." + VD.get<VDT_Type>()->getMangledTypeStr(true);
   }
 
   llvm_unreachable("Unhandled ValueDesc");
 }
-
-} // namespace
 
 Optional<unsigned> MixContextTable::getExistingIndex(ValueDesc VD) const {
   auto Iter = Desc.find(VD);
@@ -146,11 +156,11 @@ Value *MixContextTable::build(Value *DynContext, StringRef ModuleID) {
     unsigned Index;
     std::tie(VD, Index) = P;
 
-    B->CreateStore(
-        B->CreateBitCast(buildEntry(VD),
-                         getTablePtrTy(B->getContext())->getElementType(),
-                         getName(VD)),
-        B->CreateGEP(Table, B->getInt32(Index)));
+    B->CreateStore(B->CreateBitOrPointerCast(
+                       buildEntry(VD),
+                       getTablePtrTy(B->getContext())->getElementType(),
+                       getName(VD)),
+                   B->CreateGEP(Table, B->getInt32(Index)));
   }
 
   Values.clear();
@@ -187,6 +197,16 @@ Value *MixContextTable::buildEntry(ValueDesc VD) {
          B->CreateGlobalStringPtr(F->getName(), F->getName() + ".name"),
          buildType(F->getFunctionType())},
         getName(VD));
+    break;
+  }
+
+  case VDT_MDKindID: {
+    StringRef Name = getMDKindName(VD.get<VDT_MDKindID>());
+
+    V = B->CreateCall(
+        getGetMDKindIDInContextFn(getModule()),
+        {buildContext(), B->CreateGlobalStringPtr(Name, Name + ".name"),
+         ConstantInt::get(getUnsignedIntTy(B->getContext()), Name.size())});
     break;
   }
 
@@ -386,9 +406,9 @@ Instruction *MixContext::getValue(ValueDesc VD) {
 }
 
 Instruction *MixContext::getValue(ValueDesc VD, unsigned Index) {
-  return cast<Instruction>(B.CreateBitCast(
+  return cast<Instruction>(B.CreateBitOrPointerCast(
       B.CreateLoad(B.CreateGEP(TP, B.getInt32(Index)), getName(VD)),
-      ::getType(B.getContext(), VD), getName(VD)));
+      getType(VD), getName(VD)));
 }
 
 Instruction *MixContext::getExistingValue(ValueDesc VD) {

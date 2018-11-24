@@ -217,7 +217,7 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
                << I << "\n\n");
 
   for (unsigned Stage = MainF->getLastStage(); Stage--;) {
-    MixContextTable T;
+    MixContextTable T(B->getContext());
     auto ClearFunctionMapOnExit =
         make_scope_exit(std::bind(&decltype(FunctionMap)::clear, &FunctionMap));
 
