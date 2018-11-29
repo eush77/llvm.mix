@@ -21,7 +21,6 @@
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/ValueTypes.h"
@@ -31,6 +30,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/CodeGen.h"
+#include "llvm/Support/MachineValueType.h"
 #include <utility>
 
 namespace llvm {
@@ -102,6 +102,7 @@ class VectorType;
 
       VMOVRRD,      // double to two gprs.
       VMOVDRR,      // Two gprs to double.
+      VMOVSR,       // move gpr to single, used for f32 literal constructed in a gpr
 
       EH_SJLJ_SETJMP,         // SjLj exception handling setjmp.
       EH_SJLJ_LONGJMP,        // SjLj exception handling longjmp.
@@ -171,6 +172,10 @@ class VectorType;
       // Vector move f32 immediate:
       VMOVFPIMM,
 
+      // Move H <-> R, clearing top 16 bits
+      VMOVrh,
+      VMOVhr,
+
       // Vector duplicate:
       VDUP,
       VDUPLANE,
@@ -203,6 +208,8 @@ class VectorType;
       SMLALDX,      // Signed multiply accumulate long dual exchange
       SMLSLD,       // Signed multiply subtract long dual
       SMLSLDX,      // Signed multiply subtract long dual exchange
+      SMMLAR,       // Signed multiply long, round and add
+      SMMLSR,       // Signed multiply long, subtract and round
 
       // Operands of the standard BUILD_VECTOR node are not legalized, which
       // is fine if BUILD_VECTORs are always lowered to shuffles or other
@@ -325,6 +332,7 @@ class VectorType;
     bool isTruncateFree(Type *SrcTy, Type *DstTy) const override;
     bool isTruncateFree(EVT SrcVT, EVT DstVT) const override;
     bool isZExtFree(SDValue Val, EVT VT2) const override;
+    bool isFNegFree(EVT VT) const override;
 
     bool isVectorLoadExtDesirable(SDValue ExtVal) const override;
 
@@ -346,7 +354,7 @@ class VectorType;
 
     bool isLegalT2ScaledAddressingMode(const AddrMode &AM, EVT VT) const;
 
-    /// \brief Returns true if the addresing mode representing by AM is legal
+    /// Returns true if the addresing mode representing by AM is legal
     /// for the Thumb1 target, for a load/store of the specified type.
     bool isLegalT1ScaledAddressingMode(const AddrMode &AM, EVT VT) const;
 
@@ -380,6 +388,9 @@ class VectorType;
                                        const APInt &DemandedElts,
                                        const SelectionDAG &DAG,
                                        unsigned Depth) const override;
+
+    bool targetShrinkDemandedConstant(SDValue Op, const APInt &Demanded,
+                                      TargetLoweringOpt &TLO) const override;
 
 
     bool ExpandInlineAsm(CallInst *CI) const override;
@@ -474,7 +485,7 @@ class VectorType;
                             MachineFunction &MF,
                             unsigned Intrinsic) const override;
 
-    /// \brief Returns true if it is beneficial to convert a load of a constant
+    /// Returns true if it is beneficial to convert a load of a constant
     /// to just the constant itself.
     bool shouldConvertConstantLoadToIntImm(const APInt &Imm,
                                            Type *Ty) const override;
@@ -484,7 +495,7 @@ class VectorType;
     bool isExtractSubvectorCheap(EVT ResVT, EVT SrcVT,
                                  unsigned Index) const override;
 
-    /// \brief Returns true if an argument of type Ty needs to be passed in a
+    /// Returns true if an argument of type Ty needs to be passed in a
     /// contiguous block of registers in calling convention CallConv.
     bool functionArgumentNeedsConsecutiveRegisters(
         Type *Ty, CallingConv::ID CallConv, bool isVarArg) const override;
@@ -527,7 +538,8 @@ class VectorType;
     bool shouldExpandAtomicStoreInIR(StoreInst *SI) const override;
     TargetLoweringBase::AtomicExpansionKind
     shouldExpandAtomicRMWInIR(AtomicRMWInst *AI) const override;
-    bool shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *AI) const override;
+    TargetLoweringBase::AtomicExpansionKind
+    shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *AI) const override;
 
     bool useLoadStackGuardNode() const override;
 
@@ -564,12 +576,21 @@ class VectorType;
     bool isLegalInterleavedAccessType(VectorType *VecTy,
                                       const DataLayout &DL) const;
 
+    bool alignLoopsWithOptSize() const override;
+
     /// Returns the number of interleaved accesses that will be generated when
     /// lowering accesses of the given type.
     unsigned getNumInterleavedAccesses(VectorType *VecTy,
                                        const DataLayout &DL) const;
 
     void finalizeLowering(MachineFunction &MF) const override;
+
+    /// Return the correct alignment for the current calling convention.
+    unsigned getABIAlignmentForCallingConv(Type *ArgTy,
+                                           DataLayout DL) const override;
+
+    bool isDesirableToCommuteWithShift(const SDNode *N,
+                                       CombineLevel Level) const override;
 
   protected:
     std::pair<const TargetRegisterClass *, uint8_t>
@@ -751,6 +772,8 @@ class VectorType;
     bool isUsedByReturnOnly(SDNode *N, SDValue &Chain) const override;
 
     bool mayBeEmittedAsTailCall(const CallInst *CI) const override;
+
+    bool shouldConsiderGEPOffsetSplit() const override { return true; }
 
     SDValue getCMOV(const SDLoc &dl, EVT VT, SDValue FalseVal, SDValue TrueVal,
                     SDValue ARMcc, SDValue CCR, SDValue Cmp,

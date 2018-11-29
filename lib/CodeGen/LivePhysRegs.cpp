@@ -18,18 +18,19 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBundle.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
 
-/// \brief Remove all registers from the set that get clobbered by the register
+/// Remove all registers from the set that get clobbered by the register
 /// mask.
 /// The clobbers set will be the list of live registers clobbered
 /// by the regmask.
 void LivePhysRegs::removeRegsInMask(const MachineOperand &MO,
-        SmallVectorImpl<std::pair<unsigned, const MachineOperand*>> *Clobbers) {
-  SparseSet<unsigned>::iterator LRI = LiveRegs.begin();
+    SmallVectorImpl<std::pair<MCPhysReg, const MachineOperand*>> *Clobbers) {
+  RegisterSet::iterator LRI = LiveRegs.begin();
   while (LRI != LiveRegs.end()) {
     if (MO.clobbersPhysReg(*LRI)) {
       if (Clobbers)
@@ -44,7 +45,7 @@ void LivePhysRegs::removeRegsInMask(const MachineOperand &MO,
 void LivePhysRegs::removeDefs(const MachineInstr &MI) {
   for (ConstMIBundleOperands O(MI); O.isValid(); ++O) {
     if (O->isReg()) {
-      if (!O->isDef())
+      if (!O->isDef() || O->isDebug())
         continue;
       unsigned Reg = O->getReg();
       if (!TargetRegisterInfo::isPhysicalRegister(Reg))
@@ -58,7 +59,7 @@ void LivePhysRegs::removeDefs(const MachineInstr &MI) {
 /// Add uses to the set.
 void LivePhysRegs::addUses(const MachineInstr &MI) {
   for (ConstMIBundleOperands O(MI); O.isValid(); ++O) {
-    if (!O->isReg() || !O->readsReg())
+    if (!O->isReg() || !O->readsReg() || O->isDebug())
       continue;
     unsigned Reg = O->getReg();
     if (!TargetRegisterInfo::isPhysicalRegister(Reg))
@@ -82,10 +83,10 @@ void LivePhysRegs::stepBackward(const MachineInstr &MI) {
 /// on accurate kill flags. If possible use stepBackward() instead of this
 /// function.
 void LivePhysRegs::stepForward(const MachineInstr &MI,
-        SmallVectorImpl<std::pair<unsigned, const MachineOperand*>> &Clobbers) {
+    SmallVectorImpl<std::pair<MCPhysReg, const MachineOperand*>> &Clobbers) {
   // Remove killed registers from the set.
   for (ConstMIBundleOperands O(MI); O.isValid(); ++O) {
-    if (O->isReg()) {
+    if (O->isReg() && !O->isDebug()) {
       unsigned Reg = O->getReg();
       if (!TargetRegisterInfo::isPhysicalRegister(Reg))
         continue;
@@ -105,8 +106,12 @@ void LivePhysRegs::stepForward(const MachineInstr &MI,
 
   // Add defs to the set.
   for (auto Reg : Clobbers) {
-    // Skip dead defs.  They shouldn't be added to the set.
+    // Skip dead defs and registers clobbered by regmasks. They shouldn't
+    // be added to the set.
     if (Reg.second->isReg() && Reg.second->isDead())
+      continue;
+    if (Reg.second->isRegMask() &&
+        MachineOperand::clobbersPhysReg(Reg.second->getRegMask(), Reg.first))
       continue;
     addReg(Reg.first);
   }
@@ -137,7 +142,7 @@ LLVM_DUMP_METHOD void LivePhysRegs::dump() const {
 #endif
 
 bool LivePhysRegs::available(const MachineRegisterInfo &MRI,
-                             unsigned Reg) const {
+                             MCPhysReg Reg) const {
   if (LiveRegs.count(Reg))
     return false;
   if (MRI.isReserved(Reg))
@@ -152,7 +157,7 @@ bool LivePhysRegs::available(const MachineRegisterInfo &MRI,
 /// Add live-in registers of basic block \p MBB to \p LiveRegs.
 void LivePhysRegs::addBlockLiveIns(const MachineBasicBlock &MBB) {
   for (const auto &LI : MBB.liveins()) {
-    unsigned Reg = LI.PhysReg;
+    MCPhysReg Reg = LI.PhysReg;
     LaneBitmask Mask = LI.LaneMask;
     MCSubRegIndexIterator S(Reg, TRI);
     assert(Mask.any() && "Invalid livein mask");
@@ -205,14 +210,18 @@ void LivePhysRegs::addPristines(const MachineFunction &MF) {
 }
 
 void LivePhysRegs::addLiveOutsNoPristines(const MachineBasicBlock &MBB) {
-  if (!MBB.succ_empty()) {
-    // To get the live-outs we simply merge the live-ins of all successors.
-    for (const MachineBasicBlock *Succ : MBB.successors())
-      addBlockLiveIns(*Succ);
-  } else if (MBB.isReturnBlock()) {
-    // For the return block: Add all callee saved registers that are saved and
-    // restored (somewhere); This does not include callee saved registers that
-    // are unused and hence not saved and restored; they are called pristine.
+  // To get the live-outs we simply merge the live-ins of all successors.
+  for (const MachineBasicBlock *Succ : MBB.successors())
+    addBlockLiveIns(*Succ);
+  if (MBB.isReturnBlock()) {
+    // Return blocks are a special case because we currently don't mark up
+    // return instructions completely: specifically, there is no explicit
+    // use for callee-saved registers. So we add all callee saved registers
+    // that are saved and restored (somewhere). This does not include
+    // callee saved registers that are unused and hence not saved and
+    // restored; they are called pristine.
+    // FIXME: PEI should add explicit markings to return instructions
+    // instead of implicitly handling them here.
     const MachineFunction &MF = *MBB.getParent();
     const MachineFrameInfo &MFI = MF.getFrameInfo();
     if (MFI.isCalleeSavedInfoValid()) {
@@ -225,15 +234,8 @@ void LivePhysRegs::addLiveOutsNoPristines(const MachineBasicBlock &MBB) {
 
 void LivePhysRegs::addLiveOuts(const MachineBasicBlock &MBB) {
   const MachineFunction &MF = *MBB.getParent();
-  if (!MBB.succ_empty()) {
-    addPristines(MF);
-    addLiveOutsNoPristines(MBB);
-  } else if (MBB.isReturnBlock()) {
-    // For the return block: Add all callee saved registers.
-    const MachineFrameInfo &MFI = MF.getFrameInfo();
-    if (MFI.isCalleeSavedInfoValid())
-      addCalleeSavedRegs(*this, MF);
-  }
+  addPristines(MF);
+  addLiveOutsNoPristines(MBB);
 }
 
 void LivePhysRegs::addLiveIns(const MachineBasicBlock &MBB) {

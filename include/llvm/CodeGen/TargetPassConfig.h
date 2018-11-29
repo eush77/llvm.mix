@@ -16,7 +16,7 @@
 
 #include "llvm/Pass.h"
 #include "llvm/Support/CodeGen.h"
-#include <cassert> 
+#include <cassert>
 #include <string>
 
 namespace llvm {
@@ -84,20 +84,6 @@ template <> struct isPodLike<IdentifyingPassPtr> {
 /// This is an ImmutablePass solely for the purpose of exposing CodeGen options
 /// to the internals of other CodeGen passes.
 class TargetPassConfig : public ImmutablePass {
-public:
-  /// Pseudo Pass IDs. These are defined within TargetPassConfig because they
-  /// are unregistered pass IDs. They are only useful for use with
-  /// TargetPassConfig APIs to identify multiple occurrences of the same pass.
-  ///
-
-  /// EarlyTailDuplicate - A clone of the TailDuplicate pass that runs early
-  /// during codegen, on SSA form.
-  static char EarlyTailDuplicateID;
-
-  /// PostRAMachineLICM - A clone of the LICM pass that runs during late machine
-  /// optimization after regalloc.
-  static char PostRAMachineLICMID;
-
 private:
   PassManagerBase *PM = nullptr;
   AnalysisID StartBefore = nullptr;
@@ -159,26 +145,19 @@ public:
 
   CodeGenOpt::Level getOptLevel() const;
 
-  /// Describe the status of the codegen
-  /// pipeline set by this target pass config.
-  /// Having a limited codegen pipeline means that options
-  /// have been used to restrict what codegen is doing.
-  /// In particular, that means that codegen won't emit
-  /// assembly code.
-  bool hasLimitedCodeGenPipeline() const;
+  /// Returns true if one of the `-start-after`, `-start-before`, `-stop-after`
+  /// or `-stop-before` options is set.
+  static bool hasLimitedCodeGenPipeline();
+
+  /// Returns true if none of the `-stop-before` and `-stop-after` options is
+  /// set.
+  static bool willCompleteCodeGenPipeline();
 
   /// If hasLimitedCodeGenPipeline is true, this method
   /// returns a string with the name of the options, separated
   /// by \p Separator that caused this pipeline to be limited.
   std::string
   getLimitedCodeGenPipelineReason(const char *Separator = "/") const;
-
-  /// Check if the codegen pipeline is limited in such a way that it
-  /// won't be complete. When the codegen pipeline is not complete,
-  /// this means it may not be possible to generate assembly from it.
-  bool willCompleteCodeGenPipeline() const {
-    return !hasLimitedCodeGenPipeline() || (!StopAfter && !StopBefore);
-  }
 
   void setDisableVerify(bool Disable) { setOpt(DisableVerify, Disable); }
 
@@ -226,7 +205,7 @@ public:
   /// representation to the MI representation.
   /// Adds IR based lowering and target specific optimization passes and finally
   /// the core instruction selection passes.
-  /// \returns true if an error occured, false otherwise.
+  /// \returns true if an error occurred, false otherwise.
   bool addISelPasses();
 
   /// Add common target configurable passes that perform LLVM IR to IR
@@ -316,10 +295,6 @@ public:
   /// Add a pass to perform basic verification of the machine function if
   /// verification is enabled.
   void addVerifyPass(const std::string &Banner);
-
-  /// Check whether or not GlobalISel should be enabled by default.
-  /// Fallback/abort behavior is controlled via other methods.
-  virtual bool isGlobalISelEnabled() const;
 
   /// Check whether or not GlobalISel should abort on error.
   /// When this is disabled, GlobalISel will fall back on SDISel instead of
@@ -412,6 +387,13 @@ protected:
   /// This pass may be implemented by targets that want to run passes
   /// immediately before machine code is emitted.
   virtual void addPreEmitPass() { }
+
+  /// Targets may add passes immediately before machine code is emitted in this
+  /// callback. This is called even later than `addPreEmitPass`.
+  // FIXME: Rename `addPreEmitPass` to something more sensible given its actual
+  // position and remove the `2` suffix here as this callback is what
+  // `addPreEmitPass` *should* be but in reality isn't.
+  virtual void addPreEmitPass2() {}
 
   /// Utilities for targets to add passes to the pass manager.
   ///

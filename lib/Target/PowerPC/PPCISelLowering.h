@@ -20,7 +20,6 @@
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
-#include "llvm/CodeGen/MachineValueType.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetLowering.h"
@@ -31,6 +30,7 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/MachineValueType.h"
 #include <utility>
 
 namespace llvm {
@@ -70,6 +70,9 @@ namespace llvm {
       /// Newer FCTI[D,W]UZ floating-point-to-integer conversion instructions for
       /// unsigned integers with round toward zero.
       FCTIDUZ, FCTIWUZ,
+
+      /// Floating-point-to-interger conversion instructions
+      FP_TO_UINT_IN_VSR, FP_TO_SINT_IN_VSR,
 
       /// VEXTS, ByteWidth - takes an input in VSFRC and produces an output in
       /// VSFRC that is sign-extended from ByteWidth to a 64-byte integer.
@@ -146,6 +149,10 @@ namespace llvm {
       /// For vector types, only the last n bits are used. See vsld.
       SRL, SRA, SHL,
 
+      /// EXTSWSLI = The PPC extswsli instruction, which does an extend-sign
+      /// word and shift left immediate.
+      EXTSWSLI,
+
       /// The combination of sra[wd]i and addze used to implemented signed
       /// integer division by a power of 2. The first operand is the dividend,
       /// and the second is the constant shift amount (representing the
@@ -185,6 +192,9 @@ namespace llvm {
 
       /// Direct move from a GPR to a VSX register (zero)
       MTVSRZ,
+
+      /// Direct move of 2 consective GPR to a VSX register.
+      BUILD_FP128,
 
       /// Extract a subvector from signed integer vector and convert to FP.
       /// It is primarily used to convert a (widened) illegal integer vector
@@ -426,9 +436,17 @@ namespace llvm {
       /// an xxswapd.
       STXVD2X,
 
+      /// Store scalar integers from VSR.
+      ST_VSR_SCAL_INT,
+
       /// QBRC, CHAIN = QVLFSb CHAIN, Ptr
       /// The 4xf32 load used for v4i1 constants.
       QVLFSb,
+
+      /// ATOMIC_CMP_SWAP - the exact same as the target-independent nodes
+      /// except they ensure that the compare input is zero-extended for
+      /// sub-word versions because the atomic loads zero-extend.
+      ATOMIC_CMP_SWAP_8, ATOMIC_CMP_SWAP_16,
 
       /// GPRC = TOC_ENTRY GA, TOC
       /// Loads the entry for GA from the TOC, where the TOC base is given by
@@ -551,7 +569,7 @@ namespace llvm {
     /// of v4i8's and shuffle them. This will turn into a mess of 8 extending
     /// loads, moves back into VSR's (or memory ops if we don't have moves) and
     /// then the VPERM for the shuffle. All in all a very slow sequence.
-    TargetLoweringBase::LegalizeTypeAction getPreferredVectorAction(EVT VT)
+    TargetLoweringBase::LegalizeTypeAction getPreferredVectorAction(MVT VT)
       const override {
       if (VT.getScalarSizeInBits() % 8 == 0)
         return TypeWidenVector;
@@ -559,6 +577,8 @@ namespace llvm {
     }
 
     bool useSoftFloat() const override;
+
+    bool hasSPE() const;
 
     MVT getScalarShiftAmountTy(const DataLayout &, EVT) const override {
       return MVT::i32;
@@ -649,7 +669,7 @@ namespace llvm {
     SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
 
     SDValue BuildSDIVPow2(SDNode *N, const APInt &Divisor, SelectionDAG &DAG,
-                          std::vector<SDNode *> *Created) const override;
+                          SmallVectorImpl<SDNode *> &Created) const override;
 
     unsigned getRegisterByName(const char* RegName, EVT VT,
                                SelectionDAG &DAG) const override;
@@ -760,7 +780,7 @@ namespace llvm {
 
     bool isFPExtFree(EVT DestVT, EVT SrcVT) const override;
 
-    /// \brief Returns true if it is beneficial to convert a load of a constant
+    /// Returns true if it is beneficial to convert a load of a constant
     /// to just the constant itself.
     bool shouldConvertConstantLoadToIntImm(const APInt &Imm,
                                            Type *Ty) const override;
@@ -817,7 +837,7 @@ namespace llvm {
     FastISel *createFastISel(FunctionLoweringInfo &FuncInfo,
                              const TargetLibraryInfo *LibInfo) const override;
 
-    /// \brief Returns true if an argument of type Ty needs to be passed in a
+    /// Returns true if an argument of type Ty needs to be passed in a
     /// contiguous block of registers in calling convention CallConv.
     bool functionArgumentNeedsConsecutiveRegisters(
       Type *Ty, CallingConv::ID CallConv, bool isVarArg) const override {
@@ -855,6 +875,14 @@ namespace llvm {
                                                unsigned JTI,
                                                MCContext &Ctx) const override;
 
+    unsigned getNumRegistersForCallingConv(LLVMContext &Context,
+                                           CallingConv:: ID CC,
+                                           EVT VT) const override;
+
+    MVT getRegisterTypeForCallingConv(LLVMContext &Context,
+                                      CallingConv:: ID CC,
+                                      EVT VT) const override;
+
   private:
     struct ReuseLoadInfo {
       SDValue Ptr;
@@ -879,6 +907,11 @@ namespace llvm {
       }
     };
 
+    bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override {
+      // Addrspacecasts are always noops.
+      return true;
+    }
+
     bool canReuseLoadAddress(SDValue Op, EVT MemVT, ReuseLoadInfo &RLI,
                              SelectionDAG &DAG,
                              ISD::LoadExtType ET = ISD::NON_EXTLOAD) const;
@@ -893,6 +926,9 @@ namespace llvm {
     bool directMoveIsProfitable(const SDValue &Op) const;
     SDValue LowerINT_TO_FPDirectMove(SDValue Op, SelectionDAG &DAG,
                                      const SDLoc &dl) const;
+
+    SDValue LowerINT_TO_FPVector(SDValue Op, SelectionDAG &DAG,
+                                 const SDLoc &dl) const;
 
     SDValue getFramePointerFrameIndex(SelectionDAG & DAG) const;
     SDValue getReturnAddrFrameIndex(SelectionDAG & DAG) const;
@@ -955,6 +991,7 @@ namespace llvm {
     SDValue LowerINTRINSIC_VOID(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerREM(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBSWAP(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerATOMIC_CMP_SWAP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerMUL(SDValue Op, SelectionDAG &DAG) const;
@@ -1048,14 +1085,19 @@ namespace llvm {
 
     SDValue lowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerBITCAST(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue DAGCombineExtBoolTrunc(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue DAGCombineBuildVector(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue DAGCombineTruncBoolExt(SDNode *N, DAGCombinerInfo &DCI) const;
+    SDValue combineStoreFPToInt(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue combineFPToIntToFP(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue combineSHL(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue combineSRA(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue combineSRL(SDNode *N, DAGCombinerInfo &DCI) const;
+    SDValue combineADD(SDNode *N, DAGCombinerInfo &DCI) const;
+    SDValue combineTRUNCATE(SDNode *N, DAGCombinerInfo &DCI) const;
+    SDValue combineSetCC(SDNode *N, DAGCombinerInfo &DCI) const;
 
     /// ConvertSETCCToSubtract - looks at SETCC that compares ints. It replaces
     /// SETCC with integer subtraction when (1) there is a legal way of doing it
@@ -1090,6 +1132,8 @@ namespace llvm {
     // tail call. This will cause the optimizers to attempt to move, or
     // duplicate return instructions to help enable tail call optimizations.
     bool mayBeEmittedAsTailCall(const CallInst *CI) const override;
+    bool hasBitPreservingFPLogic(EVT VT) const override;
+    bool isMaskAndCmp0FoldingBeneficial(const Instruction &AndI) const override;
   }; // end class PPCTargetLowering
 
   namespace PPC {
@@ -1110,7 +1154,7 @@ namespace llvm {
                                          ISD::ArgFlagsTy &ArgFlags,
                                          CCState &State);
 
-  bool 
+  bool
   CC_PPC32_SVR4_Custom_SkipLastArgRegsPPCF128(unsigned &ValNo, MVT &ValVT,
                                                  MVT &LocVT,
                                                  CCValAssign::LocInfo &LocInfo,

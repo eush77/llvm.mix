@@ -70,10 +70,14 @@ private:
   PDBFile &getPdb();
   object::COFFObjectFile &getObj();
 
+  void printStreamNotValidForObj();
+  void printStreamNotPresent(StringRef StreamName);
+
   Error dumpFileSummary();
   Error dumpStreamSummary();
   Error dumpSymbolStats();
   Error dumpUdtStats();
+  Error dumpNamedStreams();
   Error dumpStringTable();
   Error dumpStringTableFromPdb();
   Error dumpStringTableFromObj();
@@ -81,12 +85,16 @@ private:
   Error dumpInlineeLines();
   Error dumpXmi();
   Error dumpXme();
+  Error dumpFpo();
+  Error dumpOldFpo(PDBFile &File);
+  Error dumpNewFpo(PDBFile &File);
   Error dumpTpiStream(uint32_t StreamIdx);
   Error dumpTypesFromObjectFile();
   Error dumpModules();
   Error dumpModuleFiles();
   Error dumpModuleSymsForPdb();
   Error dumpModuleSymsForObj();
+  Error dumpGSIRecords();
   Error dumpGlobals();
   Error dumpPublics();
   Error dumpSymbolsFromGSI(const GSIHashTable &Table, bool HashExtras);

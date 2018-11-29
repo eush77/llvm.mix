@@ -137,7 +137,7 @@ bool Mix::runOnModule(Module &M) {
   IRBuilder<> B(M.getContext());
   SaveAndRestore<IRBuilder<> *> RestoreBOnExit(this->B, &B);
 
-  DEBUG(dbgs() << "---- Mix : " << M.getName() << " ----\n");
+  LLVM_DEBUG(dbgs() << "---- Mix : " << M.getName() << " ----\n");
 
   bool MadeChange = false;
 
@@ -211,10 +211,10 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
   }
 
   // Print Mix header after the analysis.
-  DEBUG(dbgs() << "---- Mix : @" << MainF->getName() << " ----\n"
-               << "Creating code generator in @" << I.getFunction()->getName()
-               << '\n'
-               << I << "\n\n");
+  LLVM_DEBUG(dbgs() << "---- Mix : @" << MainF->getName() << " ----\n"
+                    << "Creating code generator in @"
+                    << I.getFunction()->getName() << '\n'
+                    << I << "\n\n");
 
   for (unsigned Stage = MainF->getLastStage(); Stage--;) {
     MixContextTable T(B->getContext());
@@ -420,8 +420,8 @@ namespace {
 // optionally the block with a static terminator (there must be at most one).
 // Returns the static terminator if found.
 template <typename OutputIt>
-TerminatorInst *traverseDynamicBlocks(BasicBlock &Start, OutputIt Out,
-                                      const BindingTimeAnalysis &BTA) {
+Instruction *traverseDynamicBlocks(BasicBlock &Start, OutputIt Out,
+                                   const BindingTimeAnalysis &BTA) {
   // The block with a static terminator reachable by dynamic edges from the
   // starting block.
   BasicBlock *Term = nullptr;
@@ -449,8 +449,8 @@ TerminatorInst *traverseDynamicBlocks(BasicBlock &Start, OutputIt Out,
 } // namespace
 
 void Mix::buildBasicBlock(BasicBlock &SourceBB) const {
-  DEBUG(dbgs() << "Building static basic block ";
-        SourceBB.printAsOperand(dbgs(), false); dbgs() << ":\n");
+  LLVM_DEBUG(dbgs() << "Building static basic block ";
+             SourceBB.printAsOperand(dbgs(), false); dbgs() << ":\n");
 
   B->SetInsertPoint(SB->defineStatic(&SourceBB));
 
@@ -461,11 +461,12 @@ void Mix::buildBasicBlock(BasicBlock &SourceBB) const {
   }
 
   std::vector<BasicBlock *> Blocks;
-  TerminatorInst *StaticTerm =
+  Instruction *StaticTerm =
       traverseDynamicBlocks(SourceBB, std::back_inserter(Blocks), *BTA);
 
   for (auto *BB : Blocks) {
-    DEBUG(dbgs() << "  "; BB->printAsOperand(dbgs(), false); dbgs() << '\n');
+    LLVM_DEBUG(dbgs() << "  "; BB->printAsOperand(dbgs(), false);
+               dbgs() << '\n');
 
     SB->positionBuilderAtEnd(SB->stage(BB, true));
 
@@ -473,8 +474,8 @@ void Mix::buildBasicBlock(BasicBlock &SourceBB) const {
                   std::bind(&Mix::buildInstruction, this, _1));
   }
 
-  DEBUG(if (StaticTerm) dbgs() << *StaticTerm << "\n\n";
-        else dbgs() << "  (no static terminator)\n\n");
+  LLVM_DEBUG(if (StaticTerm) dbgs() << *StaticTerm << "\n\n";
+             else dbgs() << "  (no static terminator)\n\n");
 
   if (!StaticTerm)
     buildRetVoid();

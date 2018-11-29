@@ -46,13 +46,17 @@ static cl::list<std::string>
 IncludeDirs("I", cl::desc("Directory of include files"),
             cl::value_desc("directory"), cl::Prefix);
 
+static cl::list<std::string>
+MacroNames("D", cl::desc("Name of the macro to be defined"),
+            cl::value_desc("macro name"), cl::Prefix);
+
 static int reportError(const char *ProgName, Twine Msg) {
   errs() << ProgName << ": " << Msg;
   errs().flush();
   return 1;
 }
 
-/// \brief Create a dependency file for `-d` option.
+/// Create a dependency file for `-d` option.
 ///
 /// This functionality is really only for the benefit of the build system.
 /// It is similar to GCC's `-M*` family of options.
@@ -91,7 +95,7 @@ int llvm::TableGenMain(char *argv0, TableGenMainFn *MainFn) {
   // it later.
   SrcMgr.setIncludeDirs(IncludeDirs);
 
-  TGParser Parser(SrcMgr, Records);
+  TGParser Parser(SrcMgr, MacroNames, Records);
 
   if (Parser.ParseFile())
     return 1;

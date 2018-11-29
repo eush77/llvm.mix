@@ -78,8 +78,8 @@ void DemandedBitsWrapperPass::print(raw_ostream &OS, const Module *M) const {
 }
 
 static bool isAlwaysLive(Instruction *I) {
-  return isa<TerminatorInst>(I) || isa<DbgInfoIntrinsic>(I) ||
-      I->isEHPad() || I->mayHaveSideEffects();
+  return I->isTerminator() || isa<DbgInfoIntrinsic>(I) || I->isEHPad() ||
+         I->mayHaveSideEffects();
 }
 
 void DemandedBits::determineLiveOperandBits(
@@ -140,6 +140,27 @@ void DemandedBits::determineLiveOperandBits(
           ComputeKnownBits(BitWidth, I, nullptr);
           AB = APInt::getLowBitsSet(BitWidth,
                  std::min(BitWidth, Known.countMaxTrailingZeros()+1));
+        }
+        break;
+      case Intrinsic::fshl:
+      case Intrinsic::fshr:
+        if (OperandNo == 2) {
+          // Shift amount is modulo the bitwidth. For powers of two we have
+          // SA % BW == SA & (BW - 1).
+          if (isPowerOf2_32(BitWidth))
+            AB = BitWidth - 1;
+        } else if (auto *SA = dyn_cast<ConstantInt>(II->getOperand(2))) {
+          // TODO: Support vectors.
+          // Normalize to funnel shift left. APInt shifts of BitWidth are well-
+          // defined, so no need to special-case zero shifts here.
+          uint64_t ShiftAmt = SA->getValue().urem(BitWidth);
+          if (II->getIntrinsicID() == Intrinsic::fshr)
+            ShiftAmt = BitWidth - ShiftAmt;
+
+          if (OperandNo == 0)
+            AB = AOut.lshr(ShiftAmt);
+          else if (OperandNo == 1)
+            AB = AOut.shl(BitWidth - ShiftAmt);
         }
         break;
       }
@@ -272,7 +293,7 @@ void DemandedBits::performAnalysis() {
     // Analysis already completed for this function.
     return;
   Analyzed = true;
-  
+
   Visited.clear();
   AliveBits.clear();
 
@@ -283,7 +304,7 @@ void DemandedBits::performAnalysis() {
     if (!isAlwaysLive(&I))
       continue;
 
-    DEBUG(dbgs() << "DemandedBits: Root: " << I << "\n");
+    LLVM_DEBUG(dbgs() << "DemandedBits: Root: " << I << "\n");
     // For integer-valued instructions, set up an initial empty set of alive
     // bits and add the instruction to the work list. For other instructions
     // add their operands to the work list (for integer values operands, mark
@@ -313,13 +334,13 @@ void DemandedBits::performAnalysis() {
   while (!Worklist.empty()) {
     Instruction *UserI = Worklist.pop_back_val();
 
-    DEBUG(dbgs() << "DemandedBits: Visiting: " << *UserI);
+    LLVM_DEBUG(dbgs() << "DemandedBits: Visiting: " << *UserI);
     APInt AOut;
     if (UserI->getType()->isIntegerTy()) {
       AOut = AliveBits[UserI];
-      DEBUG(dbgs() << " Alive Out: " << AOut);
+      LLVM_DEBUG(dbgs() << " Alive Out: " << AOut);
     }
-    DEBUG(dbgs() << "\n");
+    LLVM_DEBUG(dbgs() << "\n");
 
     if (!UserI->getType()->isIntegerTy())
       Visited.insert(UserI);
@@ -367,7 +388,7 @@ void DemandedBits::performAnalysis() {
 
 APInt DemandedBits::getDemandedBits(Instruction *I) {
   performAnalysis();
-  
+
   const DataLayout &DL = I->getModule()->getDataLayout();
   auto Found = AliveBits.find(I);
   if (Found != AliveBits.end())

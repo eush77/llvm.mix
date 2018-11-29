@@ -241,9 +241,9 @@ void BindingTimeAnalysis::fixInstruction(const Instruction *I,
 
   addTransitiveNonPhiUsers(I, MaxOperandStage);
 
-  if (auto *Term = dyn_cast<TerminatorInst>(I)) {
-    for (const BasicBlock *BB : Term->successors()) {
-      enqueue(BB, MaxOperandStage, WorklistItem::PredTerminator, Term);
+  if (I->isTerminator()) {
+    for (const BasicBlock *BB : successors(I)) {
+      enqueue(BB, MaxOperandStage, WorklistItem::PredTerminator, I);
     }
   }
 }
@@ -306,10 +306,10 @@ void BindingTimeAnalysis::fixTerminators() {
   for (auto &SourceBB : *F) {
     for (unsigned Stage = getStage(&SourceBB); Stage <= F->getLastStage();
          ++Stage) {
-      const TerminatorInst *Term = nullptr;
+      const Instruction *Term = nullptr;
 
       for (auto BBIter = df_begin(&SourceBB); BBIter != df_end(&SourceBB);) {
-        const TerminatorInst *T = (*BBIter)->getTerminator();
+        const Instruction *T = (*BBIter)->getTerminator();
 
         if (Stage < getStage(T)) {
           ++BBIter;
@@ -338,7 +338,7 @@ void BindingTimeAnalysis::fixTerminators() {
         enqueue(T, Stage + 1, WorklistItem::StageTerminator, Term, &SourceBB);
 
         // Don't emit the diagnostic in the debug mode.
-        DEBUG(continue);
+        LLVM_DEBUG(continue);
 
         F->getContext().diagnose(DiagnosticInfoBindingTime(
             DS_Warning, *F,
@@ -361,7 +361,7 @@ void BindingTimeAnalysis::fix() {
     while (auto WI = popItem()) {
       unsigned IS = WI->getIncomingStage();
 
-      DEBUG(WI->print(dbgs(), *this));
+      LLVM_DEBUG(WI->print(dbgs(), *this));
 
       if (auto *A = WI->get<Argument>()) {
         fixArgument(A, IS);
@@ -376,7 +376,7 @@ void BindingTimeAnalysis::fix() {
 
     fixTerminators();
 
-    DEBUG(dbgs() << '\n');
+    LLVM_DEBUG(dbgs() << '\n');
   } while (!Worklist.empty());
 }
 
@@ -384,7 +384,7 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
   if (!F.isStaged())
     return false;
 
-  DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
+  LLVM_DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
   this->F = &F;
 
@@ -730,13 +730,15 @@ public:
     }
 
     // Set the color for the name of the next static basic block.
-    if (auto *Term = dyn_cast<TerminatorInst>(&V)) {
-      Function::const_iterator BB(Term->getParent());
-      Function::const_iterator NextBB(std::next(BB));
+    if (auto *I = dyn_cast<Instruction>(&V)) {
+      if (I->isTerminator()) {
+        Function::const_iterator BB(I->getParent());
+        Function::const_iterator NextBB(std::next(BB));
 
-      if (NextBB != BB->getParent()->end() &&
-          BTA.getStage(&*NextBB) < F.getLastStage()) {
-        setColor(OS);
+        if (NextBB != BB->getParent()->end() &&
+            BTA.getStage(&*NextBB) < F.getLastStage()) {
+          setColor(OS);
+        }
       }
     }
   }

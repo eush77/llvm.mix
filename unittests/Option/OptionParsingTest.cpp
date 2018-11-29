@@ -97,6 +97,10 @@ TEST(Option, OptionParsing) {
   T.PrintHelp(RSO, "test", "title!");
   EXPECT_NE(std::string::npos, Help.find("-A"));
 
+  // Check usage line.
+  T.PrintHelp(RSO, "name [options] file...", "title!");
+  EXPECT_NE(std::string::npos, Help.find("USAGE: name [options] file...\n"));
+
   // Test aliases.
   auto Cs = AL.filtered(OPT_C);
   ASSERT_NE(Cs.begin(), Cs.end());
@@ -283,6 +287,8 @@ TEST(Option, FindNearest) {
   EXPECT_EQ(Nearest, "-blorp");
   EXPECT_EQ(1U, T.findNearest("--blorm", Nearest));
   EXPECT_EQ(Nearest, "--blorp");
+  EXPECT_EQ(1U, T.findNearest("-fjormp", Nearest));
+  EXPECT_EQ(Nearest, "--fjormp");
 
   // The nearest candidate respects the prefix and value delimiter
   // of the original string.

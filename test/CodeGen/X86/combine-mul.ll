@@ -2,32 +2,6 @@
 ; RUN: llc < %s -mtriple=x86_64-unknown-unknown -mattr=+sse4.1 | FileCheck %s --check-prefix=SSE
 ; RUN: llc < %s -mtriple=x86_64-unknown-unknown -mattr=+avx2 | FileCheck %s --check-prefix=AVX
 
-; fold (mul undef, x) -> 0
-define <4 x i32> @combine_vec_mul_undef0(<4 x i32> %x) {
-; SSE-LABEL: combine_vec_mul_undef0:
-; SSE:       # %bb.0:
-; SSE-NEXT:    retq
-;
-; AVX-LABEL: combine_vec_mul_undef0:
-; AVX:       # %bb.0:
-; AVX-NEXT:    retq
-  %1 = mul <4 x i32> undef, %x
-  ret <4 x i32> %1
-}
-
-; fold (mul x, undef) -> 0
-define <4 x i32> @combine_vec_mul_undef1(<4 x i32> %x) {
-; SSE-LABEL: combine_vec_mul_undef1:
-; SSE:       # %bb.0:
-; SSE-NEXT:    retq
-;
-; AVX-LABEL: combine_vec_mul_undef1:
-; AVX:       # %bb.0:
-; AVX-NEXT:    retq
-  %1 = mul <4 x i32> %x, undef
-  ret <4 x i32> %1
-}
-
 ; fold (mul x, 0) -> 0
 define <4 x i32> @combine_vec_mul_zero(<4 x i32> %x) {
 ; SSE-LABEL: combine_vec_mul_zero:
@@ -315,27 +289,26 @@ define <4 x i32> @combine_vec_mul_add(<4 x i32> %x) {
 define <16 x i8> @PR35579(<16 x i8> %x) {
 ; SSE-LABEL: PR35579:
 ; SSE:       # %bb.0:
-; SSE-NEXT:    pmovsxbw %xmm0, %xmm1
-; SSE-NEXT:    pmullw {{.*}}(%rip), %xmm1
+; SSE-NEXT:    movdqa {{.*#+}} xmm2 = [0,1,2,1,4,1,2,1,8,1,2,1,4,1,2,1]
+; SSE-NEXT:    punpckhbw {{.*#+}} xmm2 = xmm2[8],xmm0[8],xmm2[9],xmm0[9],xmm2[10],xmm0[10],xmm2[11],xmm0[11],xmm2[12],xmm0[12],xmm2[13],xmm0[13],xmm2[14],xmm0[14],xmm2[15],xmm0[15]
+; SSE-NEXT:    pmovzxbw {{.*#+}} xmm1 = xmm0[0],zero,xmm0[1],zero,xmm0[2],zero,xmm0[3],zero,xmm0[4],zero,xmm0[5],zero,xmm0[6],zero,xmm0[7],zero
+; SSE-NEXT:    punpckhbw {{.*#+}} xmm0 = xmm0[8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15]
+; SSE-NEXT:    pmullw %xmm2, %xmm0
 ; SSE-NEXT:    movdqa {{.*#+}} xmm2 = [255,255,255,255,255,255,255,255]
-; SSE-NEXT:    pand %xmm2, %xmm1
-; SSE-NEXT:    pshufd {{.*#+}} xmm0 = xmm0[2,3,0,1]
-; SSE-NEXT:    pmovsxbw %xmm0, %xmm0
-; SSE-NEXT:    pmullw {{.*}}(%rip), %xmm0
 ; SSE-NEXT:    pand %xmm2, %xmm0
+; SSE-NEXT:    pmullw {{.*}}(%rip), %xmm1
+; SSE-NEXT:    pand %xmm2, %xmm1
 ; SSE-NEXT:    packuswb %xmm0, %xmm1
 ; SSE-NEXT:    movdqa %xmm1, %xmm0
 ; SSE-NEXT:    retq
 ;
 ; AVX-LABEL: PR35579:
 ; AVX:       # %bb.0:
-; AVX-NEXT:    vpmovsxbw %xmm0, %ymm0
+; AVX-NEXT:    vpmovzxbw {{.*#+}} ymm0 = xmm0[0],zero,xmm0[1],zero,xmm0[2],zero,xmm0[3],zero,xmm0[4],zero,xmm0[5],zero,xmm0[6],zero,xmm0[7],zero,xmm0[8],zero,xmm0[9],zero,xmm0[10],zero,xmm0[11],zero,xmm0[12],zero,xmm0[13],zero,xmm0[14],zero,xmm0[15],zero
 ; AVX-NEXT:    vpmullw {{.*}}(%rip), %ymm0, %ymm0
+; AVX-NEXT:    vpand {{.*}}(%rip), %ymm0, %ymm0
 ; AVX-NEXT:    vextracti128 $1, %ymm0, %xmm1
-; AVX-NEXT:    vmovdqa {{.*#+}} xmm2 = <0,2,4,6,8,10,12,14,u,u,u,u,u,u,u,u>
-; AVX-NEXT:    vpshufb %xmm2, %xmm1, %xmm1
-; AVX-NEXT:    vpshufb %xmm2, %xmm0, %xmm0
-; AVX-NEXT:    vpunpcklqdq {{.*#+}} xmm0 = xmm0[0],xmm1[0]
+; AVX-NEXT:    vpackuswb %xmm1, %xmm0, %xmm0
 ; AVX-NEXT:    vzeroupper
 ; AVX-NEXT:    retq
   %r = mul <16 x i8> %x, <i8 0, i8 1, i8 2, i8 1, i8 4, i8 1, i8 2, i8 1, i8 8, i8 1, i8 2, i8 1, i8 4, i8 1, i8 2, i8 1>
