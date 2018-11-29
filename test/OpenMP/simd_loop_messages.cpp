@@ -99,7 +99,7 @@ int test_iteration_spaces() {
   for (int i = 0; !!i; i++)
     c[i] = a[i];
 
-  // expected-error@+2 {{condition of OpenMP for loop must be a relational comparison ('<', '<=', '>', or '>=') of loop variable 'i'}}
+  // Ok
   #pragma omp simd
   for (int i = 0; i != 1; i++)
     c[i] = a[i];
@@ -236,9 +236,7 @@ int test_iteration_spaces() {
   for (ii = 0; ii < 10; ii++)
     c[ii] = a[ii];
 
-  // expected-error@+3 {{unexpected OpenMP clause 'shared' in directive '#pragma omp simd'}}
-  // expected-note@+2  {{defined as shared}}
-  // expected-error@+2 {{loop iteration variable in the associated loop of 'omp simd' directive may not be shared, predetermined as linear}}
+  // expected-error@+1 {{unexpected OpenMP clause 'shared' in directive '#pragma omp simd'}}
   #pragma omp simd shared(ii)
   for (ii = 0; ii < 10; ii++)
     c[ii] = a[ii];

@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 /// \file
-/// \brief This file implements the OpenMP enum and support functions.
+/// This file implements the OpenMP enum and support functions.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -125,6 +125,12 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   .Case(#Name, static_cast<unsigned>(OMPC_DEFAULTMAP_MODIFIER_##Name))
 #include "clang/Basic/OpenMPKinds.def"
         .Default(OMPC_DEFAULTMAP_unknown);
+  case OMPC_atomic_default_mem_order:
+     return llvm::StringSwitch<OpenMPAtomicDefaultMemOrderClauseKind>(Str)
+#define OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(Name)       \
+  .Case(#Name, OMPC_ATOMIC_DEFAULT_MEM_ORDER_##Name)
+#include "clang/Basic/OpenMPKinds.def"
+        .Default(OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown);
   case OMPC_unknown:
   case OMPC_threadprivate:
   case OMPC_if:
@@ -168,6 +174,10 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_unified_address:
+  case OMPC_unified_shared_memory:
+  case OMPC_reverse_offload:
+  case OMPC_dynamic_allocators:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -266,6 +276,16 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
 #include "clang/Basic/OpenMPKinds.def"
     }
     llvm_unreachable("Invalid OpenMP 'schedule' clause type");
+  case OMPC_atomic_default_mem_order:
+    switch (Type) {
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown:
+      return "unknown";
+#define OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(Name)                           \
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_##Name:                               \
+      return #Name;
+#include "clang/Basic/OpenMPKinds.def"
+}
+    llvm_unreachable("Invalid OpenMP 'atomic_default_mem_order' clause type");
   case OMPC_unknown:
   case OMPC_threadprivate:
   case OMPC_if:
@@ -309,6 +329,10 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_unified_address:
+  case OMPC_unified_shared_memory:
+  case OMPC_reverse_offload:
+  case OMPC_dynamic_allocators:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -435,6 +459,16 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
   case OMPD_target:
     switch (CKind) {
 #define OPENMP_TARGET_CLAUSE(Name)                                             \
+  case OMPC_##Name:                                                            \
+    return true;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    break;
+  case OMPD_requires:
+    switch (CKind) {
+#define OPENMP_REQUIRES_CLAUSE(Name)                                             \
   case OMPC_##Name:                                                            \
     return true;
 #include "clang/Basic/OpenMPKinds.def"
@@ -891,6 +925,7 @@ void clang::getOpenMPCaptureRegions(
   case OMPD_target_teams:
   case OMPD_target_teams_distribute:
   case OMPD_target_teams_distribute_simd:
+    CaptureRegions.push_back(OMPD_task);
     CaptureRegions.push_back(OMPD_target);
     CaptureRegions.push_back(OMPD_teams);
     break;
@@ -901,6 +936,7 @@ void clang::getOpenMPCaptureRegions(
     break;
   case OMPD_target:
   case OMPD_target_simd:
+    CaptureRegions.push_back(OMPD_task);
     CaptureRegions.push_back(OMPD_target);
     break;
   case OMPD_teams_distribute_parallel_for:
@@ -911,6 +947,7 @@ void clang::getOpenMPCaptureRegions(
   case OMPD_target_parallel:
   case OMPD_target_parallel_for:
   case OMPD_target_parallel_for_simd:
+    CaptureRegions.push_back(OMPD_task);
     CaptureRegions.push_back(OMPD_target);
     CaptureRegions.push_back(OMPD_parallel);
     break;
@@ -925,6 +962,8 @@ void clang::getOpenMPCaptureRegions(
     CaptureRegions.push_back(OMPD_taskloop);
     break;
   case OMPD_target_teams_distribute_parallel_for:
+  case OMPD_target_teams_distribute_parallel_for_simd:
+    CaptureRegions.push_back(OMPD_task);
     CaptureRegions.push_back(OMPD_target);
     CaptureRegions.push_back(OMPD_teams);
     CaptureRegions.push_back(OMPD_parallel);
@@ -943,7 +982,6 @@ void clang::getOpenMPCaptureRegions(
   case OMPD_atomic:
   case OMPD_target_data:
   case OMPD_distribute_simd:
-  case OMPD_target_teams_distribute_parallel_for_simd:
     CaptureRegions.push_back(OMPD_unknown);
     break;
   case OMPD_threadprivate:
@@ -957,6 +995,7 @@ void clang::getOpenMPCaptureRegions(
   case OMPD_declare_simd:
   case OMPD_declare_target:
   case OMPD_end_declare_target:
+  case OMPD_requires:
     llvm_unreachable("OpenMP Directive is not allowed");
   case OMPD_unknown:
     llvm_unreachable("Unknown OpenMP directive");

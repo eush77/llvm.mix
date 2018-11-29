@@ -54,6 +54,7 @@ add_clang_library(clangBasic
   DiagnosticOptions.cpp
   FileManager.cpp
   FileSystemStatCache.cpp
+  FixedPoint.cpp
   IdentifierTable.cpp
   LangOptions.cpp
   MemoryBufferCache.cpp
@@ -70,6 +71,7 @@ add_clang_library(clangBasic
   Targets.cpp
   Targets/AArch64.cpp
   Targets/AMDGPU.cpp
+  Targets/ARC.cpp
   Targets/ARM.cpp
   Targets/AVR.cpp
   Targets/BPF.cpp
@@ -83,6 +85,7 @@ add_clang_library(clangBasic
   Targets/OSTargets.cpp
   Targets/PNaCl.cpp
   Targets/PPC.cpp
+  Targets/RISCV.cpp
   Targets/SPIR.cpp
   Targets/Sparc.cpp
   Targets/SystemZ.cpp
@@ -92,9 +95,8 @@ add_clang_library(clangBasic
   Targets/XCore.cpp
   TokenKinds.cpp
   Version.cpp
-  VersionTuple.cpp
-  VirtualFileSystem.cpp
   Warnings.cpp
+  XRayInstr.cpp
   XRayLists.cpp
   ${version_inc}
   )

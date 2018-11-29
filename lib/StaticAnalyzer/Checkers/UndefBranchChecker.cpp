@@ -59,7 +59,7 @@ public:
 
 void UndefBranchChecker::checkBranchCondition(const Stmt *Condition,
                                               CheckerContext &Ctx) const {
-  SVal X = Ctx.getState()->getSVal(Condition, Ctx.getLocationContext());
+  SVal X = Ctx.getSVal(Condition);
   if (X.isUndef()) {
     // Generate a sink node, which implicitly marks both outgoing branches as
     // infeasible.
@@ -98,7 +98,7 @@ void UndefBranchChecker::checkBranchCondition(const Stmt *Condition,
 
       // Emit the bug report.
       auto R = llvm::make_unique<BugReport>(*BT, BT->getDescription(), N);
-      bugreporter::trackNullOrUndefValue(N, Ex, *R);
+      bugreporter::trackExpressionValue(N, Ex, *R);
       R->addRange(Ex->getSourceRange());
 
       Ctx.emitReport(std::move(R));

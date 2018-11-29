@@ -33,28 +33,31 @@ class ThreadSafeToolResults : public ToolResults {
 public:
   void addResult(StringRef Key, StringRef Value) override {
     std::unique_lock<std::mutex> LockGuard(Mutex);
-    Results[Key] = Value;
+    Results.addResult(Key, Value);
   }
 
-  std::vector<std::pair<std::string, std::string>> AllKVResults() override {
-    std::vector<std::pair<std::string, std::string>> KVs;
-    for (const auto &Pair : Results)
-      KVs.emplace_back(Pair.first().str(), Pair.second);
-    return KVs;
+  std::vector<std::pair<llvm::StringRef, llvm::StringRef>>
+  AllKVResults() override {
+    return Results.AllKVResults();
   }
 
   void forEachResult(llvm::function_ref<void(StringRef Key, StringRef Value)>
                          Callback) override {
-    for (const auto &Pair : Results)
-      Callback(Pair.first(), Pair.second);
+    Results.forEachResult(Callback);
   }
 
 private:
-  llvm::StringMap<std::string> Results;
+  InMemoryToolResults Results;
   std::mutex Mutex;
 };
 
 } // namespace
+
+llvm::cl::opt<std::string>
+    Filter("filter",
+           llvm::cl::desc("Only process files that match this filter. "
+                          "This flag only applies to all-TUs."),
+           llvm::cl::init(".*"));
 
 AllTUsToolExecutor::AllTUsToolExecutor(
     const CompilationDatabase &Compilations, unsigned ThreadCount,
@@ -93,7 +96,12 @@ llvm::Error AllTUsToolExecutor::execute(
     llvm::errs() << Msg.str() << "\n";
   };
 
-  auto Files = Compilations.getAllFiles();
+  std::vector<std::string> Files;
+  llvm::Regex RegexFilter(Filter);
+  for (const auto& File : Compilations.getAllFiles()) {
+    if (RegexFilter.match(File))
+      Files.push_back(File);
+  }
   // Add a counter to track the progress.
   const std::string TotalNumStr = std::to_string(Files.size());
   unsigned Counter = 0;
@@ -107,7 +115,12 @@ llvm::Error AllTUsToolExecutor::execute(
   {
     llvm::ThreadPool Pool(ThreadCount == 0 ? llvm::hardware_concurrency()
                                            : ThreadCount);
-
+    llvm::SmallString<128> InitialWorkingDir;
+    if (auto EC = llvm::sys::fs::current_path(InitialWorkingDir)) {
+      InitialWorkingDir = "";
+      llvm::errs() << "Error while getting current working directory: "
+                   << EC.message() << "\n";
+    }
     for (std::string File : Files) {
       Pool.async(
           [&](std::string Path) {
@@ -119,11 +132,20 @@ llvm::Error AllTUsToolExecutor::execute(
             for (const auto &FileAndContent : OverlayFiles)
               Tool.mapVirtualFile(FileAndContent.first(),
                                   FileAndContent.second);
+            // Do not restore working dir from multiple threads to avoid races.
+            Tool.setRestoreWorkingDir(false);
             if (Tool.run(Action.first.get()))
               AppendError(llvm::Twine("Failed to run action on ") + Path +
                           "\n");
           },
           File);
+    }
+    // Make sure all tasks have finished before resetting the working directory.
+    Pool.wait();
+    if (!InitialWorkingDir.empty()) {
+      if (auto EC = llvm::sys::fs::set_current_path(InitialWorkingDir))
+        llvm::errs() << "Error while restoring working directory: "
+                     << EC.message() << "\n";
     }
   }
 
@@ -136,7 +158,8 @@ llvm::Error AllTUsToolExecutor::execute(
 static llvm::cl::opt<unsigned> ExecutorConcurrency(
     "execute-concurrency",
     llvm::cl::desc("The number of threads used to process all files in "
-                   "parallel. Set to 0 for hardware concurrency."),
+                   "parallel. Set to 0 for hardware concurrency. "
+                   "This flag only applies to all-TUs."),
     llvm::cl::init(0));
 
 class AllTUsToolExecutorPlugin : public ToolExecutorPlugin {
@@ -153,9 +176,8 @@ public:
 };
 
 static ToolExecutorPluginRegistry::Add<AllTUsToolExecutorPlugin>
-    X("all-TUs",
-      "Runs FrontendActions on all TUs in the compilation database. "
-      "Tool results are deduplicated by the result key and stored in memory.");
+    X("all-TUs", "Runs FrontendActions on all TUs in the compilation database. "
+                 "Tool results are stored in memory.");
 
 // This anchor is used to force the linker to link in the generated object file
 // and thus register the plugin.

@@ -35,7 +35,8 @@ int TestAlignedNull __attribute__((aligned));
 int TestAlignedExpr __attribute__((aligned(4)));
 // CHECK:      VarDecl{{.*}}TestAlignedExpr
 // CHECK-NEXT:   AlignedAttr {{.*}} aligned
-// CHECK-NEXT:     IntegerLiteral
+// CHECK-NEXT:     ConstantExpr
+// CHECK-NEXT:       IntegerLiteral
 
 int TestEnum __attribute__((visibility("default")));
 // CHECK:      VarDecl{{.*}}TestEnum
@@ -68,12 +69,12 @@ __attribute__((pointer_with_type_tag(ident1,1,2)));
 void TestBool(void *, int)
 __attribute__((pointer_with_type_tag(bool1,1,2)));
 // CHECK: FunctionDecl{{.*}}TestBool
-// CHECK:   ArgumentWithTypeTagAttr{{.*}}pointer_with_type_tag bool1 0 1 IsPointer
+// CHECK:   ArgumentWithTypeTagAttr{{.*}}pointer_with_type_tag bool1 1 2 IsPointer
 
 void TestUnsigned(void *, int)
 __attribute__((pointer_with_type_tag(unsigned1,1,2)));
 // CHECK: FunctionDecl{{.*}}TestUnsigned
-// CHECK:   ArgumentWithTypeTagAttr{{.*}} pointer_with_type_tag unsigned1 0 1
+// CHECK:   ArgumentWithTypeTagAttr{{.*}} pointer_with_type_tag unsigned1 1 2
 
 void TestInt(void) __attribute__((constructor(123)));
 // CHECK:      FunctionDecl{{.*}}TestInt
@@ -209,3 +210,24 @@ namespace TestSuppress {
       }
     }
 }
+
+// Verify the order of attributes in the Ast. It must reflect the order
+// in the parsed source.
+int mergeAttrTest() __attribute__((deprecated)) __attribute__((warn_unused_result));
+int mergeAttrTest() __attribute__((annotate("test")));
+int mergeAttrTest() __attribute__((unused,no_thread_safety_analysis));
+// CHECK: FunctionDecl{{.*}} mergeAttrTest
+// CHECK-NEXT: DeprecatedAttr
+// CHECK-NEXT: WarnUnusedResultAttr
+
+// CHECK: FunctionDecl{{.*}} mergeAttrTest
+// CHECK-NEXT: DeprecatedAttr{{.*}} Inherited
+// CHECK-NEXT: WarnUnusedResultAttr{{.*}} Inherited
+// CHECK-NEXT: AnnotateAttr{{.*}}
+
+// CHECK: FunctionDecl{{.*}} mergeAttrTest
+// CHECK-NEXT: DeprecatedAttr{{.*}} Inherited
+// CHECK-NEXT: WarnUnusedResultAttr{{.*}} Inherited
+// CHECK-NEXT: AnnotateAttr{{.*}} Inherited
+// CHECK-NEXT: UnusedAttr
+// CHECK-NEXT: NoThreadSafetyAnalysisAttr

@@ -46,7 +46,10 @@ public:
   }
 
   bool TraverseFunctionDecl(clang::FunctionDecl *Decl) {
-    Context->reportResult(Decl->getNameAsString(), "1");
+    Context->reportResult(Decl->getNameAsString(),
+                          Context->getRevision() + ":" + Context->getCorpus() +
+                              ":" + Context->getCurrentCompilationUnit() +
+                              "/1");
     return ASTVisitor::TraverseFunctionDecl(Decl);
   }
 
@@ -92,6 +95,8 @@ public:
       : OptionsParser(std::move(Options)) {}
 
   StringRef getExecutorName() const override { return ExecutorName; }
+
+  bool isSingleProcess() const override { return true; }
 
   llvm::Error
   execute(llvm::ArrayRef<std::pair<std::unique_ptr<FrontendActionFactory>,
@@ -213,10 +218,12 @@ TEST(StandaloneToolTest, SimpleActionWithResult) {
   auto KVs = Executor.getToolResults()->AllKVResults();
   ASSERT_EQ(KVs.size(), 1u);
   EXPECT_EQ("f", KVs[0].first);
-  EXPECT_EQ("1", KVs[0].second);
+  // Currently the standlone executor returns empty corpus, revision, and
+  // compilation unit.
+  EXPECT_EQ("::/1", KVs[0].second);
 
   Executor.getToolResults()->forEachResult(
-      [](StringRef, StringRef Value) { EXPECT_EQ("1", Value); });
+      [](StringRef, StringRef Value) { EXPECT_EQ("::/1", Value); });
 }
 
 class FixedCompilationDatabaseWithFiles : public CompilationDatabase {
@@ -241,12 +248,14 @@ private:
 MATCHER_P(Named, Name, "") { return arg.first == Name; }
 
 TEST(AllTUsToolTest, AFewFiles) {
-  FixedCompilationDatabaseWithFiles Compilations(".", {"a.cc", "b.cc", "c.cc"},
-                                                 std::vector<std::string>());
+  FixedCompilationDatabaseWithFiles Compilations(
+      ".", {"a.cc", "b.cc", "c.cc", "ignore.cc"}, std::vector<std::string>());
   AllTUsToolExecutor Executor(Compilations, /*ThreadCount=*/0);
+  Filter.setValue("[a-c].cc");
   Executor.mapVirtualFile("a.cc", "void x() {}");
   Executor.mapVirtualFile("b.cc", "void y() {}");
   Executor.mapVirtualFile("c.cc", "void z() {}");
+  Executor.mapVirtualFile("ignore.cc", "void d() {}");
 
   auto Err = Executor.execute(std::unique_ptr<FrontendActionFactory>(
       new ReportResultActionFactory(Executor.getExecutionContext())));
@@ -254,6 +263,7 @@ TEST(AllTUsToolTest, AFewFiles) {
   EXPECT_THAT(
       Executor.getToolResults()->AllKVResults(),
       ::testing::UnorderedElementsAre(Named("x"), Named("y"), Named("z")));
+  Filter.setValue(".*"); // reset to default value.
 }
 
 TEST(AllTUsToolTest, ManyFiles) {

@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -verify -fopenmp -x c++ -triple x86_64-unknown-unknown -emit-llvm %s -fexceptions -fcxx-exceptions -o - | FileCheck %s
+// RUN: %clang_cc1 -verify -fopenmp -x c++ -triple x86_64-unknown-unknown -emit-llvm %s -fexceptions -fcxx-exceptions -o - -fsanitize-address-use-after-scope | FileCheck %s --check-prefix=CHECK --check-prefix=LIFETIME
 // RUN: %clang_cc1 -fopenmp -x c++ -std=c++11 -triple x86_64-unknown-unknown -fexceptions -fcxx-exceptions -emit-pch -o %t %s
 // RUN: %clang_cc1 -fopenmp -x c++ -triple x86_64-unknown-unknown -fexceptions -fcxx-exceptions -std=c++11 -include-pch %t -verify %s -emit-llvm -o - | FileCheck %s
 // RUN: %clang_cc1 -verify -triple x86_64-apple-darwin10 -fopenmp -fexceptions -fcxx-exceptions -debug-info-kind=line-tables-only -x c++ -emit-llvm %s -o - | FileCheck %s --check-prefix=TERM_DEBUG
@@ -17,16 +17,28 @@
 // PROF-INSTR-PATH: constant [25 x i8] c"for_codegen-test.profraw\00"
 
 // CHECK: [[IDENT_T_TY:%.+]] = type { i32, i32, i32, i32, i8* }
-// CHECK-DAG: [[IMPLICIT_BARRIER_LOC:@.+]] = private unnamed_addr constant %{{.+}} { i32 0, i32 66, i32 0, i32 0, i8*
-// CHECK-DAG: [[LOOP_LOC:@.+]] = private unnamed_addr constant %{{.+}} { i32 0, i32 514, i32 0, i32 0, i8*
+// CHECK-DAG: [[IMPLICIT_BARRIER_LOC:@.+]] = private unnamed_addr global %{{.+}} { i32 0, i32 66, i32 0, i32 0, i8*
+// CHECK-DAG: [[LOOP_LOC:@.+]] = private unnamed_addr global %{{.+}} { i32 0, i32 514, i32 0, i32 0, i8*
 // CHECK-DAG: [[I:@.+]] = global i8 1,
 // CHECK-DAG: [[J:@.+]] = global i8 2,
 // CHECK-DAG: [[K:@.+]] = global i8 3,
 
 // CHECK-LABEL: loop_with_counter_collapse
 void loop_with_counter_collapse() {
-  // CHECK: call void @__kmpc_for_static_init_8(%ident_t* @
-  // CHECK: call void @__kmpc_for_static_fini(%ident_t* @
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // CHECK: call void @__kmpc_for_static_init_8(%struct.ident_t* @
+  // CHECK: call void @__kmpc_for_static_fini(%struct.ident_t* @
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
+  // LIFETIME: call void @llvm.lifetime.end
   #pragma omp for collapse(2)
   for (int i = 0; i < 4; i++) {
     for (int j = i; j < 4; j++) {
@@ -373,12 +385,12 @@ void parallel_for(float *a) {
 #pragma omp parallel
 #pragma omp for schedule(static, 5)
   // TERM_DEBUG-NOT: __kmpc_global_thread_num
-  // TERM_DEBUG:     call void @__kmpc_for_static_init_4u({{.+}}), !dbg [[DBG_LOC_START:![0-9]+]]
+  // TERM_DEBUG:     call void @__kmpc_for_static_init_4u({{.+}}), !dbg [[DBG_LOC:![0-9]+]]
   // TERM_DEBUG:     invoke i32 {{.*}}foo{{.*}}()
   // TERM_DEBUG:     unwind label %[[TERM_LPAD:.+]],
   // TERM_DEBUG-NOT: __kmpc_global_thread_num
-  // TERM_DEBUG:     call void @__kmpc_for_static_fini({{.+}}), !dbg [[DBG_LOC_END:![0-9]+]]
-  // TERM_DEBUG:     call {{.+}} @__kmpc_barrier({{.+}}), !dbg [[DBG_LOC_CANCEL:![0-9]+]]
+  // TERM_DEBUG:     call void @__kmpc_for_static_fini({{.+}}), !dbg [[DBG_LOC]]
+  // TERM_DEBUG:     call {{.+}} @__kmpc_barrier({{.+}}), !dbg [[DBG_LOC]]
   // TERM_DEBUG:     [[TERM_LPAD]]
   // TERM_DEBUG:     call void @__clang_call_terminate
   // TERM_DEBUG:     unreachable
@@ -386,9 +398,7 @@ void parallel_for(float *a) {
     a[i] += foo();
 }
 // Check source line corresponds to "#pragma omp for schedule(static, 5)" above:
-// TERM_DEBUG-DAG: [[DBG_LOC_START]] = !DILocation(line: [[@LINE-15]],
-// TERM_DEBUG-DAG: [[DBG_LOC_END]] = !DILocation(line: [[@LINE-16]],
-// TERM_DEBUG-DAG: [[DBG_LOC_CANCEL]] = !DILocation(line: [[@LINE-17]],
+// TERM_DEBUG: [[DBG_LOC]] = !DILocation(line: [[@LINE-15]],
 
 char i = 1, j = 2, k = 3;
 // CHECK-LABEL: for_with_global_lcv

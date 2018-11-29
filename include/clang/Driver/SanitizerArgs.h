@@ -30,12 +30,13 @@ class SanitizerArgs {
   std::vector<std::string> ExtraDeps;
   int CoverageFeatures = 0;
   int MsanTrackOrigins = 0;
-  bool MsanUseAfterDtor = false;
+  bool MsanUseAfterDtor = true;
   bool CfiCrossDso = false;
   bool CfiICallGeneralizePointers = false;
   int AsanFieldPadding = 0;
   bool SharedRuntime = false;
   bool AsanUseAfterScope = true;
+  bool AsanPoisonCustomArrayCookie = false;
   bool AsanGlobalsDeadStripping = false;
   bool LinkCXXRuntimes = false;
   bool NeedPIE = false;
