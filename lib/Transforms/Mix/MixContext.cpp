@@ -95,7 +95,7 @@ std::string MixContextBase::getName(ValueDesc VD) const {
     return "metadata." + MDKindNames[VD.get<VDT_MDKindID>()].str();
 
   case VDT_Type:
-    return "type." + VD.get<VDT_Type>()->getMangledTypeStr(true);
+    return "type." + VD.get<VDT_Type>()->getMangledTypeStr();
   }
 
   llvm_unreachable("Unhandled ValueDesc");
