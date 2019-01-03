@@ -18,7 +18,7 @@ declare float @llvm.sqrt.f32(float)
 ; STAGE1: declare i32 @casted(float)
 declare i32 @casted(float)
 
-; STAGE1-LABEL: define float @f(float %x)
+; STAGE1-LABEL: define dso_local float @f(float %x)
 define stage(1) float @f(float stage(1) %x) stage(1) {
   ; STAGE1: %y = call float @g(float %x)
   %y = call float @g(float %x)

@@ -9,7 +9,7 @@ define i32 @e(i32 %x) {
   ret i32 %y
 }
 
-; STAGE1-LABEL: define i32 @g()
+; STAGE1-LABEL: define dso_local i32 @g()
 define stage(1) i32 @g(i32 %x) stage(1) {
   ; STAGE1-NEXT: %t0 = call i32 @e(i32 4)
   %t0 = call i32 @e(i32 %x)

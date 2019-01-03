@@ -3,7 +3,7 @@
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; STAGE1-LABEL: define void @f()
+; STAGE1-LABEL: define dso_local void @f()
 define void @f() stage(1) {
   ; STAGE1: unreachable
   unreachable

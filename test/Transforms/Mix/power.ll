@@ -6,7 +6,7 @@
 
 ; STAGE0: define private %struct.LLVMOpaqueValue* @power-iter.main(%struct.LLVMOpaqueContext* %context, i32 %n)
 ; STAGE0: define private %struct.LLVMOpaqueValue* @power-iter.mix(i8** %mix.context, i32 %n)
-; STAGE1-LABEL: define i32 @power-iter(i32 %x)
+; STAGE1-LABEL: define dso_local i32 @power-iter(i32 %x)
 define stage(1) i32 @power-iter(i32 stage(1) %x, i32 %n) stage(1) {
 ; STAGE0: entry:
 entry:

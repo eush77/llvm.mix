@@ -6,7 +6,7 @@
 ; RUN: | opt -verify -disable-output
 
 ; STAGE0-LABEL: define private { i32, %struct.LLVMOpaqueValue* } @f.mix(i8** %mix.context, i32 %n)
-; STAGE1: define i32 [[f4:@f]]()
+; STAGE1: define dso_local i32 [[f4:@f]]()
 ; STAGE1: call i32 [[f3:@f.+]]()
 ; STAGE1: ret i32 16
 define i32 @f(i32 %n) stage(1) {
@@ -40,19 +40,19 @@ exit:                           ; STAGE0-LABEL: {{^}}exit:
   ret i32 1
 }
 
-; STAGE1: define i32 [[f3]]
+; STAGE1: define internal i32 [[f3]]
 ; STAGE1: call i32 [[f2:@f.+]]()
 ; STAGE1: ret i32 8
 
-; STAGE1: define i32 [[f2]]
+; STAGE1: define internal i32 [[f2]]
 ; STAGE1: call i32 [[f1:@f.+]]()
 ; STAGE1: ret i32 4
 
-; STAGE1: define i32 [[f1]]
+; STAGE1: define internal i32 [[f1]]
 ; STAGE1: call i32 [[f0:@f.+]]()
 ; STAGE1: ret i32 2
 
-; STAGE1: define i32 [[f0]]
+; STAGE1: define internal i32 [[f0]]
 ; STAGE1: ret i32 1
 
 define void @main() {

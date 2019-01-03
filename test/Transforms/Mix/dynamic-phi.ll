@@ -8,7 +8,7 @@
 ; STAGE0-LABEL: define stage(1) i32 @f()
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* %context)
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
-; STAGE1-LABEL: define i32 @f()
+; STAGE1-LABEL: define dso_local i32 @f()
 define stage(1) i32 @f() stage(1) {
 ; STAGE1-LABEL: entry:
 entry:

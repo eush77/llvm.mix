@@ -9,7 +9,7 @@
 ; RUN: | opt -verify -disable-output
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @i1.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define i1 @i1()
+; STAGE1-LABEL: define dso_local i1 @i1()
 define i1 @i1() stage(1) {
   ; STAGE0: LLVMInt1TypeInContext
   ; STAGE1: ret i1 false
@@ -17,7 +17,7 @@ define i1 @i1() stage(1) {
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @i44.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define i44 @i44()
+; STAGE1-LABEL: define dso_local i44 @i44()
 define i44 @i44() stage(1) {
   ; STAGE0: LLVMIntTypeInContext
   ; STAGE1: ret i44 -8796093022208
@@ -25,7 +25,7 @@ define i44 @i44() stage(1) {
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @i256.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define i256 @i256()
+; STAGE1-LABEL: define dso_local i256 @i256()
 define i256 @i256() stage(1) {
   ; STAGE0: LLVMIntTypeInContext
   ; STAGE1: ret i256 -57896044618658097711785492504343953926634992332820282019728792003956564819968
@@ -33,7 +33,7 @@ define i256 @i256() stage(1) {
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @half.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define half @half()
+; STAGE1-LABEL: define dso_local half @half()
 define half @half() stage(1) {
   ; STAGE0: LLVMHalfTypeInContext
   ; STAGE1: ret half 0xH0123
@@ -41,7 +41,7 @@ define half @half() stage(1) {
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @double.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define double @double()
+; STAGE1-LABEL: define dso_local double @double()
 define double @double() stage(1) {
   ; STAGE0: LLVMDoubleTypeInContext
   ; STAGE1: ret double 1.25
@@ -49,7 +49,7 @@ define double @double() stage(1) {
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @fp128.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define fp128 @fp128()
+; STAGE1-LABEL: define dso_local fp128 @fp128()
 define fp128 @fp128() stage(1) {
   ; STAGE0: LLVMFP128TypeInContext
   ; STAGE1: ret fp128 0xL{{0+}}AD
@@ -64,13 +64,13 @@ define %opaque* @struct.opaque() stage(1) {
   ; STAGE0: LLVMStructCreateNamed
   ; STAGE0-NOT: LLVMStructSetBody
   ; STAGE1: %opaque = type opaque
-  ; STAGE1: define %opaque* @struct.opaque()
+  ; STAGE1: define dso_local %opaque* @struct.opaque()
   ; STAGE1: ret %opaque* null
   ret %opaque* null
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.empty.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define {} @struct.empty()
+; STAGE1-LABEL: define dso_local {} @struct.empty()
 define {} @struct.empty() stage(1) {
   ; STAGE0-NOT: LLVMStructCreateNamed
   ; STAGE0: LLVMStructTypeInContext
@@ -80,7 +80,7 @@ define {} @struct.empty() stage(1) {
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.literal.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define { i32, i32 } @struct.literal()
+; STAGE1-LABEL: define dso_local { i32, i32 } @struct.literal()
 define { i32, i32 } @struct.literal() stage(1) {
   ; STAGE0-NOT: LLVMStructCreateNamed
   ; STAGE0: LLVMStructTypeInContext
@@ -90,7 +90,7 @@ define { i32, i32 } @struct.literal() stage(1) {
 }
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.packed.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define <{ i32, i32 }> @struct.packed()
+; STAGE1-LABEL: define dso_local <{ i32, i32 }> @struct.packed()
 define <{ i32, i32 }> @struct.packed() stage(1) {
   ; STAGE0-NOT: LLVMStructCreateNamed
   ; STAGE0: LLVMStructTypeInContext
@@ -107,7 +107,7 @@ define %struct @struct.named() stage(1) {
   ; STAGE0: LLVMStructCreateNamed
   ; STAGE0: LLVMStructSetBody
   ; STAGE1: %struct = type  { i32, i32 }
-  ; STAGE1: define %struct @struct.named()
+  ; STAGE1: define dso_local %struct @struct.named()
   ; STAGE1: ret %struct { i32 1, i32 2 }
   ret %struct { i32 1, i32 2 }
 }
@@ -115,7 +115,7 @@ define %struct @struct.named() stage(1) {
 declare i32 @llvm.read_register.i32(metadata)
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @metadata.main(%struct.LLVMOpaqueContext* %context)
-; STAGE1-LABEL: define i32 @metadata()
+; STAGE1-LABEL: define dso_local i32 @metadata()
 define stage(1) i32 @metadata() stage(1) {
   ; STAGE0: LLVMMetadataTypeInContext
   ; STAGE1: call i32 @llvm.read_register.i32(metadata !0)

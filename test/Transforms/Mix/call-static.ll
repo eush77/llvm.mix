@@ -3,7 +3,7 @@
 ; RUN: opt -S -mix %s -o - | lli -force-interpreter - 2>&1 \
 ; RUN: | opt -verify -disable-output
 
-; STAGE1-LABEL: define i32 @f()
+; STAGE1-LABEL: define dso_local i32 @f()
 define i32 @f() stage(1) {
   ; STAGE1-NEXT: call i32 @g()
   %t = call i32 @g(i32 1)

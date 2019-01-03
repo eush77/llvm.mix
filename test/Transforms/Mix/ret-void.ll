@@ -14,7 +14,7 @@
 ; STAGE0: call void @LLVMDisposeBuilder
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context)
-; STAGE1-LABEL: define void @f()
+; STAGE1-LABEL: define dso_local void @f()
 define void @f() stage(1) {
   ; STAGE0: [[function:%.+]] = call %struct.LLVMOpaqueValue* @LLVMAddFunction
   ; STAGE0: [[entry:%.+]] = call %struct.LLVMOpaqueBasicBlock* @LLVMAppendBasicBlockInContext(%struct.LLVMOpaqueContext* {{.*}}, %struct.LLVMOpaqueValue* [[function]],

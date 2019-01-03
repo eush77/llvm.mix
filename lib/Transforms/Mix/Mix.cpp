@@ -89,12 +89,10 @@ private:
   struct StagedFunctionInfo {
     Function *Mix;
     FunctionType *FTy;
-    GlobalValue::LinkageTypes Linkage;
   };
 
   Value *visitMixIRIntrinsicInst(IntrinsicInst &);
-  StagedFunctionInfo declareFunction(Function &,
-                                     GlobalValue::LinkageTypes) const;
+  StagedFunctionInfo declareFunction(Function &) const;
   Function *buildMain(Function &F, Function &SourceF, MixContextTable &) const;
   void buildFunction(Function &SourceF, const StagedFunctionInfo &SFI,
                      MixContextTable &);
@@ -224,9 +222,7 @@ Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
     assert(FunctionMap.empty() && "FunctionMap is not empty");
 
     for (auto *F : Functions)
-      FunctionMap[F] =
-          declareFunction(*F, F == MainF ? GlobalValue::ExternalLinkage
-                                         : GlobalValue::InternalLinkage);
+      FunctionMap[F] = declareFunction(*F);
 
     for (auto &P : FunctionMap)
       buildFunction(*P.first, P.second, T);
@@ -294,7 +290,7 @@ struct Params {
 // Move all last-stage arguments to the next stage and return a function of
 // all the other arguments and MixContext table pointer.
 Mix::StagedFunctionInfo
-Mix::declareFunction(Function &F, GlobalValue::LinkageTypes Linkage) const {
+Mix::declareFunction(Function &F) const {
   LLVMContext &C = F.getContext();
   AttributeList FA = F.getAttributes();
   Params SP(F, std::bind(std::less<unsigned>(), _1, F.getLastStage()), 1);
@@ -328,7 +324,7 @@ Mix::declareFunction(Function &F, GlobalValue::LinkageTypes Linkage) const {
                       FA.getAttributes(AttributeList::FunctionIndex));
   SP.applyTo(*NewF);
 
-  return {NewF, FunctionType::get(F.getReturnType(), DP.Types, false), Linkage};
+  return {NewF, FunctionType::get(F.getReturnType(), DP.Types, false)};
 }
 
 Function *Mix::buildMain(Function &F, Function &SourceF,
@@ -349,6 +345,7 @@ Function *Mix::buildMain(Function &F, Function &SourceF,
   // Build context table.
   Value *TP = T.build(MainF->arg_begin(), SourceF.getName().str() + ".module",
                       B->GetInsertBlock());
+  MixContext MC(T, TP, B->GetInsertBlock());
 
   // Call the main mix function.
   SmallVector<Value *, 4> Args{TP};
@@ -358,9 +355,11 @@ Function *Mix::buildMain(Function &F, Function &SourceF,
   auto *V = SourceF.getReturnStage() < SourceF.getLastStage()
                 ? B->CreateExtractValue(S, 1)
                 : S;
+  StagedIRBuilder<IRBuilder<>>(*B, MC).setLinkage(V,
+                                                  GlobalValue::ExternalLinkage);
 
   // Dispose context table.
-  MixContext(T, TP, B->GetInsertBlock()).dispose();
+  MC.dispose();
 
   B->CreateRet(V);
   return MainF;
@@ -379,7 +378,8 @@ void Mix::buildFunction(Function &SourceF, const StagedFunctionInfo &SFI,
   StagedIRBuilder<IRBuilder<>> SB(*B, MC);
   SaveAndRestore<StagedIRBuilder<IRBuilder<>> *> RestoreSBOnExit(this->SB, &SB);
 
-  SB.createFunction(SFI.FTy, SFI.Linkage, SourceF.getName(), "function", true);
+  SB.createFunction(SFI.FTy, GlobalValue::InternalLinkage, SourceF.getName(),
+                    "function", true);
 
   // Stage function arguments.
   {

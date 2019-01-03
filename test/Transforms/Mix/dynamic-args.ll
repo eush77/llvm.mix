@@ -14,7 +14,7 @@
 ; STAGE0: [[function_type:%.+]] = call %struct.LLVMOpaqueType* @LLVMFunctionType(%struct.LLVMOpaqueType* [[i32]], %struct.LLVMOpaqueType** [[param_types]], i32 1, i32 0)
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @f.mix(i8** %mix.context, i32 %n)
-; STAGE1-LABEL: define i32 @f(i32 %x)
+; STAGE1-LABEL: define dso_local i32 @f(i32 %x)
 define stage(1) i32 @f(i32 %n, i32 stage(1) %x) stage(1) {
   ; STAGE1: %y = add i32 %x, 4
   %y = add i32 %x, %n
