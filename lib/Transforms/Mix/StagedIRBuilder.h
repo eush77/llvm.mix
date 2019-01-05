@@ -44,6 +44,7 @@
 
 #include <cassert>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -376,6 +377,36 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
                                EV->getIndices().front()));
       pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
       setBuilderName("ExtractValue");
+      break;
+    }
+
+    case Instruction::GetElementPtr: {
+      auto *GEP = cast<GetElementPtrInst>(Inst);
+
+      pushArg(getValuePtrTy(B.getContext()), stage(GEP->getPointerOperand()));
+
+      if (GEP->isInBounds() && GEP->getNumIndices() == 2 &&
+          GEP->hasAllConstantIndices() &&
+          cast<ConstantInt>(GEP->idx_begin())->isZero()) {
+        pushArg(getUnsignedIntTy(B.getContext()), *std::next(GEP->idx_begin()));
+        pushArg(getCharPtrTy(B.getContext()), stage(GEP->getName()));
+        setBuilderName("StructGEP");
+      } else {
+        Value *Indices = B.CreateAlloca(getValuePtrTy(B.getContext()),
+                                        B.getInt32(GEP->getNumIndices()));
+        auto IIter = GEP->idx_begin();
+
+        for (unsigned INum = 0; INum < GEP->getNumIndices(); ++INum)
+          B.CreateStore(stage(*IIter++),
+                        B.CreateGEP(Indices, B.getInt32(INum)));
+
+        pushArg(getValuePtrTy(B.getContext())->getPointerTo(), Indices);
+        pushArg(getUnsignedIntTy(B.getContext()),
+                ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                                 GEP->getNumIndices()));
+        pushArg(getCharPtrTy(B.getContext()), stage(GEP->getName()));
+        setBuilderName(GEP->isInBounds() ? "InBoundsGEP" : "GEP");
+      }
       break;
     }
 
