@@ -14,6 +14,7 @@
 #include "InstCombineInternal.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/BindingTimeAnalysis.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -525,6 +526,14 @@ static bool isSafeAndProfitableToSinkLoad(LoadInst *L) {
     if (AllocaInst *AI = dyn_cast<AllocaInst>(GEP->getOperand(0)))
       if (AI->isStaticAlloca() && GEP->hasAllConstantIndices())
         return false;
+
+  // It is not profitable to sink a load from a pointer with object stage
+  // annotation, because that would break execution stage separation and
+  // prevent the load from disappearing in an earlier stage.
+  if (Value *P = getLoadStorePointerOperand(L)) {
+    if (getObjectStageAnnotation(P))
+      return false;
+  }
 
   return true;
 }

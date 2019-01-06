@@ -66,11 +66,7 @@ using namespace std::placeholders;
 
 #define DEBUG_TYPE "bta"
 
-namespace {
-
-// Returns the intrinsic call that annotates the value with an object stage,
-// or null if no such call exists.
-const IntrinsicInst *getObjectStageAnnotation(const Value *V) {
+const IntrinsicInst *llvm::getObjectStageAnnotation(const Value *V) {
   if (auto *I = dyn_cast<IntrinsicInst>(V)) {
     if (I->getIntrinsicID() == Intrinsic::object_stage) {
       return I;
@@ -78,8 +74,6 @@ const IntrinsicInst *getObjectStageAnnotation(const Value *V) {
   }
   return nullptr;
 }
-
-} // namespace
 
 // Get the earliest stage at which the pointed object is constant. If it is
 // not constant at any stage, return `LastStage + 1'.

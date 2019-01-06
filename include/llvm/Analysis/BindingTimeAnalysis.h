@@ -36,12 +36,19 @@ class Argument;
 class DiagnosticPrinter;
 class Function;
 class Instruction;
+class IntrinsicInst;
 class PHINode;
 class raw_ostream;
 class TerminatorInst;
 class Twine;
 class Use;
 class Value;
+
+// Returns the intrinsic call that annotates the value with an object stage,
+// or null if no such call exists.
+//
+// See documentation for `@llvm.object.stage` intrinsic.
+const IntrinsicInst *getObjectStageAnnotation(const Value *);
 
 class BindingTimeAnalysis : public FunctionPass {
 public:
