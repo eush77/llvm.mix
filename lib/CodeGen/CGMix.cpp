@@ -22,7 +22,6 @@
 #include "llvm/IR/Value.h"
 
 #include <algorithm>
-#include <cassert>
 #include <iterator>
 #include <utility>
 
@@ -33,11 +32,6 @@ void CodeGenFunction::EmitMixSpecializerBody(FunctionArgList &Args) {
   FunctionDecl *F = nullptr;
 
   if (auto *MA = CurFuncDecl->getAttr<MixAttr>()) {
-    F = MA->getMixedFunction();
-  }
-
-  if (auto *MA = CurFuncDecl->getAttr<MixIRAttr>()) {
-    assert(!F && "Conflicting attributes");
     F = MA->getMixedFunction();
   }
 
@@ -56,8 +50,8 @@ void CodeGenFunction::EmitMixSpecializerBody(FunctionArgList &Args) {
       ArgValues[1], llvm::Type::getInt8PtrTy(getLLVMContext()),
       ArgValues[1]->getName());
 
-  llvm::Value *RetVal = Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::mix_ir),
-                                     ArgValues, "function");
+  llvm::Value *RetVal = Builder.CreateCall(
+      CGM.getIntrinsic(llvm::Intrinsic::mix), ArgValues, "function");
   RetVal = Builder.CreateBitCast(RetVal, CurFn->getReturnType(), "function");
 
   Builder.CreateStore(RetVal, ReturnValue);

@@ -2963,7 +2963,7 @@ bool FunctionDecl::isTargetMultiVersion() const {
 }
 
 bool FunctionDecl::isMixSpecializerDeclaration() const {
-  return hasAttr<MixAttr>() || hasAttr<MixIRAttr>();
+  return hasAttr<MixAttr>();
 }
 
 void

@@ -1261,13 +1261,6 @@ def Mix : Attr {
   let Documentation = [Undocumented];
 }
 
-def MixIR : Attr {
-  let Spellings = [Clang<"mix_ir">];
-  let Args = [FunctionArgument<"MixedFunction">];
-  let Subjects = SubjectList<[Function], ErrorDiag>;
-  let Documentation = [Undocumented];
-}
-
 def Stage : Attr {
   let Spellings = [Keyword<"__stage">];
   let Args = [UnsignedArgument<"Stage">,

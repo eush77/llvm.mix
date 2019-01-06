@@ -3424,15 +3424,14 @@ def err_attribute_cleanup_func_must_take_one_arg : Error<
 def err_attribute_cleanup_func_arg_incompatible_type : Error<
   "'cleanup' function %0 parameter has "
   "%diff{type $ which is incompatible with type $|incompatible type}1,2">;
-def err_attribute_mix_arg_function : Error<
-  "'%select{mix|mix_ir}0' argument%select{| %2| %2| %2}1 does not refer to "
-  "a%select{||| staged}1 function%select{|| with a body|}1">;
-def err_attribute_mix_return_type : Error<
-  "Expected%select{| a pointer}0 return type%select{ %1|}0 from a function "
-  "with '%select{mix|mix_ir}0' attribute">;
-def err_attribute_mix_argument_count : Error<
-  "Expected%select{| at least}2 %1 arguments from a function with "
-  "'%select{mix|mix_ir}0' attribute">;
+def err_attribute_mix_arg_function
+    : Error<"'mix' argument%select{| %2| %2| %2}0 does not refer to "
+            "a%select{||| staged}0 function%select{|| with a body|}0">;
+def err_attribute_mix_return_type : Error<"Expected a pointer return type from "
+                                          "a function with 'mix' attribute">;
+def err_attribute_mix_argument_count
+    : Error<"Expected%select{| at least}1 %0 arguments from a function with "
+            "'mix' attribute">;
 def err_attribute_mix_argument_type : Error<
   "Argument type does not match argument type %0 of '%1'">;
 def err_attribute_mix_context_argument_type : Error<

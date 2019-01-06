@@ -1287,10 +1287,7 @@ static void handleTestTypestateAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 }
 
 static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
-  bool IsMixIR = AL.getKind() == ParsedAttr::AT_MixIR;
-
-  if (checkAttrMutualExclusion<MixAttr>(S, D, AL) ||
-      checkAttrMutualExclusion<MixIRAttr>(S, D, AL))
+  if (checkAttrMutualExclusion<MixAttr>(S, D, AL))
     return;
 
   Expr *E = AL.getArgAsExpr(0);
@@ -1299,31 +1296,28 @@ static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
   if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     if (!(FD = dyn_cast<FunctionDecl>(DRE->getDecl()))) {
       S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
-          << IsMixIR << 1 << DRE->getNameInfo().getName();
+          << 1 << DRE->getNameInfo().getName();
       return;
     }
     if (!FD->hasBody()) {
       S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
-          << IsMixIR << 2 << DRE->getNameInfo().getName();
+          << 2 << DRE->getNameInfo().getName();
       return;
     }
     if (!FD->hasAttr<StageAttr>() ||
         !FD->getAttr<StageAttr>()->getFunctionStage()) {
       S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
-          << IsMixIR << 3 << DRE->getNameInfo().getName();
+          << 3 << DRE->getNameInfo().getName();
       return;
     }
   } else {
-    S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
-        << IsMixIR << 0;
+    S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function) << 0;
     return;
   }
 
-  if ((!IsMixIR && D->getReturnType() != FD->getReturnType()) ||
-      (IsMixIR && !D->getReturnType()->isPointerType())) {
+  if (!D->getReturnType()->isPointerType()) {
     S.Diag(D->getReturnTypeSourceRange().getBegin(),
-           diag::err_attribute_mix_return_type)
-        << IsMixIR << FD->getReturnType();
+           diag::err_attribute_mix_return_type);
     return;
   }
 
@@ -1338,8 +1332,7 @@ static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
       (FD->isVariadic() && D->param_size() < 1 + Stage0Params.size())) {
     S.Diag(D->getSourceRange().getBegin(),
            diag::err_attribute_mix_argument_count)
-        << IsMixIR << static_cast<unsigned>(1 + Stage0Params.size())
-        << FD->isVariadic();
+        << static_cast<unsigned>(1 + Stage0Params.size()) << FD->isVariadic();
     return;
   }
 
@@ -1361,13 +1354,8 @@ static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
     return;
   }
 
-  if (IsMixIR) {
-    D->addAttr(::new (S.Context) MixIRAttr(AL.getRange(), S.Context, FD,
-                                           AL.getAttributeSpellingListIndex()));
-  } else {
-    D->addAttr(::new (S.Context) MixAttr(AL.getRange(), S.Context, FD,
-                                         AL.getAttributeSpellingListIndex()));
-  }
+  D->addAttr(::new (S.Context) MixAttr(AL.getRange(), S.Context, FD,
+                                       AL.getAttributeSpellingListIndex()));
 }
 
 static void handleStagedAttr(Sema &S, RecordDecl *D, const ParsedAttr &AL) {
@@ -6800,7 +6788,6 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
 
   // Mixed execution attributes.
   case ParsedAttr::AT_Mix:
-  case ParsedAttr::AT_MixIR:
     handleMixAttr(S, cast<FunctionDecl>(D), AL);
     break;
   case ParsedAttr::AT_Stage:
