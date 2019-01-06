@@ -91,7 +91,7 @@ private:
     FunctionType *FTy;
   };
 
-  Value *visitMixIRIntrinsicInst(IntrinsicInst &);
+  Value *visitMixIntrinsicInst(IntrinsicInst &);
   StagedFunctionInfo declareFunction(Function &) const;
   Function *buildMain(Function &F, Function &SourceF, MixContextTable &) const;
   void buildFunction(Function &SourceF, const StagedFunctionInfo &SFI,
@@ -149,8 +149,8 @@ bool Mix::runOnModule(Module &M) {
           Value *V;
 
           switch (I->getIntrinsicID()) {
-          case Intrinsic::mix_ir:
-            V = visitMixIRIntrinsicInst(*I);
+          case Intrinsic::mix:
+            V = visitMixIntrinsicInst(*I);
             break;
 
           default:
@@ -174,7 +174,7 @@ bool Mix::runOnModule(Module &M) {
   return MadeChange;
 }
 
-Value *Mix::visitMixIRIntrinsicInst(IntrinsicInst &I) {
+Value *Mix::visitMixIntrinsicInst(IntrinsicInst &I) {
   Function *MainF =
       cast<Function>(cast<ConstantExpr>(I.getArgOperand(0))->getOperand(0));
 

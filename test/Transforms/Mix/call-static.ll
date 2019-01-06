@@ -35,14 +35,14 @@ define i32 @s(i32 %x, i32 %y) stage(1) {
 
 define void @main() {
   %context = call i8* @LLVMContextCreate()
-  %function = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ()* @f to i8*), i8* %context)
+  %function = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32 ()* @f to i8*), i8* %context)
   %module = call i8* @LLVMGetGlobalParent(i8* %function)
   call void @LLVMDumpModule(i8* %module)
   call void @LLVMContextDispose(i8* %context)
   ret void
 }
 
-declare i8* @llvm.mix.ir(i8*, i8*, ...)
+declare i8* @llvm.mix(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpModule(i8*)

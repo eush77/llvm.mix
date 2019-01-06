@@ -4148,13 +4148,12 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
            "Stage argument of llvm.object.stage must be non-negative", CS);
     break;
   }
-  case Intrinsic::mix_ir: {
+  case Intrinsic::mix: {
     auto *FID = dyn_cast<ConstantExpr>(CS.getArgOperand(0));
-    Assert(FID, "First argument of llvm.mix.ir is not a constant expression",
-           CS);
+    Assert(FID, "First argument of llvm.mix is not a constant expression", CS);
     Assert(FID->getOpcode() == Instruction::BitCast &&
                isa<Function>(FID->getOperand(0)),
-           "First argument of llvm.mix.ir is not a function identifier", CS);
+           "First argument of llvm.mix is not a function identifier", CS);
 
     auto *F = cast<Function>(FID->getOperand(0));
     Assert(!F->isDeclaration(),

@@ -13399,15 +13399,15 @@ This intrinsic annotates the object pointer with the binding-time stage. It is
 only used to aid binding-time analysis and does not (directly) affect code
 generation. It returns the value of the first argument.
 
-'``llvm.mix.ir``' Intrinsic
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+'``llvm.mix``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Syntax:
 """""""
 
 ::
 
-      declare i8* @llvm.mix.ir(i8* %function, i8* %context, ...)
+      declare i8* @llvm.mix(i8* %function, i8* %context, ...)
 
 Overview:
 """""""""

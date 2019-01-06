@@ -23,15 +23,15 @@ define stage(1) i32 @array([1 x i32] stage(1) %x) stage(1) {
 
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  %struct = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ({ i32 })* @struct to i8*), i8* %c)
+  %struct = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32 ({ i32 })* @struct to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %struct)
-  %array = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 ([1 x i32])* @array to i8*), i8* %c)
+  %array = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32 ([1 x i32])* @array to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %array)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
 
-declare i8* @llvm.mix.ir(i8*, i8*, ...)
+declare i8* @llvm.mix(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpValue(i8*)

@@ -32,17 +32,17 @@ define stage(1) i32* @structgep({ i32, i32 }* stage(1) %x) stage(1) {
 
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  %gep = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32* ([4 x i32]*, i32, i32)* @gep to i8*), i8* %c)
+  %gep = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32* ([4 x i32]*, i32, i32)* @gep to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %gep)
-  %inboundsgep = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32* ({ i32, { i32, i32 } }*)* @inboundsgep to i8*), i8* %c)
+  %inboundsgep = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32* ({ i32, { i32, i32 } }*)* @inboundsgep to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %inboundsgep)
-  %structgep = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32* ({ i32, i32 }*)* @structgep to i8*), i8* %c)
+  %structgep = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32* ({ i32, i32 }*)* @structgep to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %structgep)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
 
-declare i8* @llvm.mix.ir(i8*, i8*, ...)
+declare i8* @llvm.mix(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpValue(i8*)

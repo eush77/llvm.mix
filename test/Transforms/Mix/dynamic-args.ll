@@ -25,13 +25,13 @@ define stage(1) i32 @f(i32 %n, i32 stage(1) %x) stage(1) {
 define void @main() {
   %c = call i8* @LLVMContextCreate()
   ; STAGE0: call %struct.LLVMOpaqueValue* @f.main({{.*}}, i32 4)
-  %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (i32 (i32, i32)* @f to i8*), i8* %c, i32 4)
+  %f = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32 (i32, i32)* @f to i8*), i8* %c, i32 4)
   call void @LLVMDumpValue(i8* %f)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
 
-declare i8* @llvm.mix.ir(i8*, i8*, ...)
+declare i8* @llvm.mix(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpValue(i8*)

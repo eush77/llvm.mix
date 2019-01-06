@@ -31,7 +31,7 @@ define void @main() {
   ; STAGE0-NEXT: [[context:%.+]] = bitcast i8* %context to %struct.LLVMOpaqueContext*
   ; STAGE0-NEXT: [[function:%.+]] = call %struct.LLVMOpaqueValue* @f.main(%struct.LLVMOpaqueContext* [[context]])
   ; STAGE0: %function = bitcast %struct.LLVMOpaqueValue* [[function]] to i8*
-  %function = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void ()* @f to i8*), i8* %context)
+  %function = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (void ()* @f to i8*), i8* %context)
   ; STAGE0-NEXT: call void @LLVMDumpValue(i8* %function)
   call void @LLVMDumpValue(i8* %function)
   ; STAGE0-NEXT: call void @LLVMContextDispose(i8* %context)
@@ -40,7 +40,7 @@ define void @main() {
   ret void
 }
 
-declare i8* @llvm.mix.ir(i8*, i8*, ...)
+declare i8* @llvm.mix(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpValue(i8*)

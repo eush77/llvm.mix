@@ -29,14 +29,14 @@ declare {i8*, i1} @llvm.type.checked.load(i8*, i32, metadata)
 
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (void (i32, i32)* @f to i8*), i8* %c, i32 4)
+  %f = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (void (i32, i32)* @f to i8*), i8* %c, i32 4)
   %m = call i8* @LLVMGetGlobalParent(i8* %f)
   call void @LLVMDumpModule(i8* %m)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
 
-declare i8* @llvm.mix.ir(i8*, i8*, ...)
+declare i8* @llvm.mix(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpModule(i8*)

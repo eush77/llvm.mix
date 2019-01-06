@@ -33,14 +33,14 @@ define stage(1) float @f(float stage(1) %x) stage(1) {
 
 define void @main() {
   %c = call i8* @LLVMContextCreate()
-  %f = call i8* (i8*, i8*, ...) @llvm.mix.ir(i8* bitcast (float (float)* @f to i8*), i8* %c)
+  %f = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (float (float)* @f to i8*), i8* %c)
   %m = call i8* @LLVMGetGlobalParent(i8* %f)
   call void @LLVMDumpModule(i8* %m)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
 
-declare i8* @llvm.mix.ir(i8*, i8*, ...)
+declare i8* @llvm.mix(i8*, i8*, ...)
 declare i8* @LLVMContextCreate()
 declare void @LLVMContextDispose(i8*)
 declare void @LLVMDumpModule(i8*)
