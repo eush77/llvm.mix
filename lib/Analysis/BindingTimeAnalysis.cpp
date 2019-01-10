@@ -199,13 +199,19 @@ void BindingTimeAnalysis::addTransitiveNonPhiUsers(const Value *V,
     // Close the set of transitive users by including users of phi users.
     if (auto *Phi = dyn_cast<PHINode>(U.getUser())) {
       addUsesOf(Phi);
-    } else {
-      verifyUse(U, IncomingStage);
-      enqueue(U.getUser(), IncomingStage,
-              TUNum < NumDirectUsers ? WorklistItem::Operand
-                                     : WorklistItem::TransitiveOperand,
-              V);
+      continue;
     }
+
+    verifyUse(U, IncomingStage);
+
+    // Return stages of calls are declared with annotations
+    if (isa<CallInst>(U.getUser()) && !getObjectStageAnnotation(U.getUser()))
+      continue;
+
+    enqueue(U.getUser(), IncomingStage,
+            TUNum < NumDirectUsers ? WorklistItem::Operand
+                                   : WorklistItem::TransitiveOperand,
+            V);
   }
 }
 

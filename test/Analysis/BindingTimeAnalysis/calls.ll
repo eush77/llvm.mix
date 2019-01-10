@@ -14,10 +14,11 @@ define i32 @s(i32 %x) stage(1) {
 }
 
 ; CHECK-LABEL: Function Attrs: stage(1)
-; CHECK-NEXT: define stage(1) i32 @g(i32 %x)
-define stage(1) i32 @g(i32 %x) stage(1) {
+; CHECK-NEXT: define stage(1) i32 @g(i32 %x, i32 (i32)* %f0)
+define stage(1) i32 @g(i32 %x, i32 (i32)* %f0) stage(1) {
 ; CHECK-NEXT: {{^}}; stage(0)
   %t0 = call i32 @s(i32 %x)     ; CHECK-NEXT: stage(0)
   %t1 = call i32 @e(i32 %t0)    ; CHECK-NEXT: stage(1)
-  ret i32 %t1                   ; CHECK-NEXT: stage(1)
+  %t2 = call i32 %f0(i32 %x)    ; CHECK-NEXT: stage(1)
+  ret i32 %t2                   ; CHECK-NEXT: stage(1)
 }
