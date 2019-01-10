@@ -224,10 +224,17 @@ Value *Mix::visitMixIntrinsicInst(IntrinsicInst &I) {
     for (auto *F : Functions)
       FunctionMap[F] = declareFunction(*F);
 
-    for (auto &P : FunctionMap)
+    // Clear all functions from the previous stage
+    Functions.clear();
+
+    for (auto &P : FunctionMap) {
       buildFunction(*P.first, P.second, T);
+      BTA->runOnFunction(*P.second.Mix);
+      Functions.push_back(P.second.Mix);
+    }
 
     MainF = buildMain(*FunctionMap.lookup(MainF).Mix, *MainF, T);
+    BTA->runOnFunction(*MainF);
     Functions.push_back(MainF);
   }
 
