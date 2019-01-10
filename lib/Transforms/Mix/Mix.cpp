@@ -244,6 +244,24 @@ Value *Mix::visitMixIntrinsicInst(IntrinsicInst &I) {
 
 namespace {
 
+// Get function attributes for a mix function from a function that is being
+// staged
+AttrBuilder getMixFunctionAttributes(const Function &F) {
+  assert(F.isStaged() && "Not a staged function");
+
+  AttrBuilder AB;
+
+  for (const Attribute &A :
+       F.getAttributes().getAttributes(AttributeList::FunctionIndex)) {
+    if (A.hasAttribute(Attribute::Stage))
+      AB.addStageAttr(A.getStage() - 1);
+    else
+      AB.addAttribute(A);
+  }
+
+  return AB;
+}
+
 template <typename TypeOutputIt, typename NameOutputIt, typename AttrOutputIt,
           typename StagePredicate>
 void getParamsByStage(const Function &F, TypeOutputIt OutType,
@@ -252,7 +270,7 @@ void getParamsByStage(const Function &F, TypeOutputIt OutType,
   AttributeList FA = F.getAttributes();
 
   for (const Argument &A : F.args()) {
-    if (!Pred(A.getStage()))
+    if (F.isStaged() && !Pred(A.getStage()))
       continue;
 
     *OutType++ = A.getType();
@@ -292,7 +310,6 @@ struct Params {
 Mix::StagedFunctionInfo
 Mix::declareFunction(Function &F) const {
   LLVMContext &C = F.getContext();
-  AttributeList FA = F.getAttributes();
   Params SP(F, std::bind(std::less<unsigned>(), _1, F.getLastStage()), 1);
   Params DP(F, std::bind(std::equal_to<unsigned>(), _1, F.getLastStage()));
 
@@ -321,7 +338,7 @@ Mix::declareFunction(Function &F) const {
 
   // Apply attributes.
   NewF->addAttributes(AttributeList::FunctionIndex,
-                      FA.getAttributes(AttributeList::FunctionIndex));
+                      getMixFunctionAttributes(F));
   SP.applyTo(*NewF);
 
   return {NewF, FunctionType::get(F.getReturnType(), DP.Types, false)};
@@ -339,6 +356,8 @@ Function *Mix::buildMain(Function &F, Function &SourceF,
       FunctionType::get(getValuePtrTy(C), P.Types, false),
       GlobalValue::PrivateLinkage, SourceF.getName() + ".main");
   M->getFunctionList().insertAfter(SourceF.getIterator(), MainF);
+  MainF->addAttributes(AttributeList::FunctionIndex,
+                       getMixFunctionAttributes(SourceF));
   P.applyTo(*MainF);
   B->SetInsertPoint(BasicBlock::Create(C, "", MainF));
 
