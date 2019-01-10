@@ -313,6 +313,15 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
     pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(1)));
     pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
     setBuilderName("BinOp");
+  } else if (Inst->isCast()) {
+    LLVMOpcode CAPIOpcode = LLVMGetInstructionOpcode(wrap(Inst));
+
+    pushArg(getOpcodeTy(B.getContext()),
+            ConstantInt::get(getOpcodeTy(B.getContext()), CAPIOpcode));
+    pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(0)));
+    pushArg(getTypePtrTy(B.getContext()), C.getType(Inst->getType()));
+    pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
+    setBuilderName("Cast");
   } else {
     switch (Inst->getOpcode()) {
     case Instruction::Alloca: {
@@ -475,16 +484,6 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
       } else {
         setBuilderName("RetVoid");
       }
-      break;
-    }
-
-    case Instruction::Trunc: {
-      auto *Trunc = cast<TruncInst>(Inst);
-
-      pushArg(getValuePtrTy(B.getContext()), stage(Trunc->getOperand(0)));
-      pushArg(getTypePtrTy(B.getContext()), C.getType(Trunc->getDestTy()));
-      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-      setBuilderName("Trunc");
       break;
     }
 
