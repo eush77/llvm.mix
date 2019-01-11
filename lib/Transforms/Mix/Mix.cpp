@@ -534,7 +534,8 @@ bool Mix::buildCall(CallInst &Call) const {
   if (!Callee.isStaged() || Callee.getLastStage() < SourceF->getLastStage())
     return false;
 
-  const StagedFunctionInfo &CalleeInfo = FunctionMap.lookup(&Callee);
+  StagedFunctionInfo CalleeInfo = FunctionMap.lookup(&Callee);
+  assert(CalleeInfo.Mix && "Callee not found in the function map");
   SmallVector<Value *, 4> StaticArgs{MC->getTablePointer()};
   SmallVector<Value *, 4> DynamicArgs;
 
