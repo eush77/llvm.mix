@@ -251,22 +251,23 @@ Value *Mix::visitMixIntrinsicInst(IntrinsicInst &I) {
 
 namespace {
 
-// Get function attributes for a mix function from a function that is being
-// staged
-AttrBuilder getMixFunctionAttributes(const Function &F) {
-  assert(F.isStaged() && "Not a staged function");
+// Set function and return attributes of a mix function from attributes of
+// a function being staged
+void setMixFunctionAttributes(Function &F, const Function &SourceF) {
+  assert(SourceF.isStaged() && "Not a staged function");
 
-  AttrBuilder AB;
+  AttributeList AL = SourceF.getAttributes();
 
-  for (const Attribute &A :
-       F.getAttributes().getAttributes(AttributeList::FunctionIndex)) {
-    if (A.hasAttribute(Attribute::Stage))
-      AB.addStageAttr(A.getStage() - 1);
-    else
-      AB.addAttribute(A);
-  }
+  auto SetStage = [Stage = SourceF.getLastStage() - 1](AttributeSet AS) {
+    return AttrBuilder(AS)
+        .removeAttribute(Attribute::Stage)
+        .addStageAttr(Stage);
+  };
 
-  return AB;
+  F.addAttributes(AttributeList::FunctionIndex,
+                  SetStage(AL.getAttributes(AttributeList::FunctionIndex)));
+  F.addAttributes(AttributeList::ReturnIndex,
+                  SetStage(AL.getAttributes(AttributeList::ReturnIndex)));
 }
 
 template <typename TypeOutputIt, typename NameOutputIt, typename AttrOutputIt,
@@ -344,8 +345,7 @@ Mix::declareFunction(Function &F) const {
   M->getFunctionList().insertAfter(F.getIterator(), NewF);
 
   // Apply attributes.
-  NewF->addAttributes(AttributeList::FunctionIndex,
-                      getMixFunctionAttributes(F));
+  setMixFunctionAttributes(*NewF, F);
   SP.applyTo(*NewF);
 
   return {NewF, FunctionType::get(F.getReturnType(), DP.Types, false)};
@@ -363,8 +363,7 @@ Function *Mix::buildMain(Function &F, Function &SourceF,
       FunctionType::get(getValuePtrTy(C), P.Types, false),
       GlobalValue::PrivateLinkage, SourceF.getName() + ".main");
   M->getFunctionList().insertAfter(SourceF.getIterator(), MainF);
-  MainF->addAttributes(AttributeList::FunctionIndex,
-                       getMixFunctionAttributes(SourceF));
+  setMixFunctionAttributes(*MainF, SourceF);
   P.applyTo(*MainF);
   B->SetInsertPoint(BasicBlock::Create(C, "", MainF));
 
