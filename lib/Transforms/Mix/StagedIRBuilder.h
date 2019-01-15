@@ -33,6 +33,8 @@
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstVisitor.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Metadata.h"
@@ -50,6 +52,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 using namespace std::string_literals;
 
@@ -66,6 +69,7 @@ public:
   StagedIRBuilder(StagedIRBuilder &&Other) = default;
 
   IRBuilder &getBuilder() const { return B; }
+  MixContext &getContext() { return C; }
 
   // Interface to current staged function/block.
   Instruction *getFunction() const { return SF; }
@@ -286,226 +290,265 @@ void StagedIRBuilder<IRBuilder>::stageIncomingList(PHINode *Phi,
   }
 }
 
-template <typename IRBuilder>
-Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *Inst) {
-  SmallVector<Type *, 4> ParamTypes{getBuilderPtrTy(B.getContext())};
-  SmallVector<Value *, 4> Arguments{C.getBuilder()};
-  const char *BuilderName = nullptr;
+namespace detail {
 
-  auto pushArg = [&ParamTypes, &Arguments](Type *Ty, Value *V) {
+// Helper class for staging instructions
+template <typename IRBuilder>
+class StagedInstructionBuilder
+    : public InstVisitor<StagedInstructionBuilder<IRBuilder>> {
+public:
+  explicit StagedInstructionBuilder(StagedIRBuilder<IRBuilder> &SB)
+      : SB(SB), B(SB.getBuilder()), C(SB.getContext()),
+        ParamTypes{getBuilderPtrTy(B.getContext())}, Arguments{C.getBuilder()} {
+  }
+
+  Instruction *stage(Instruction *);
+  void visitAllocaInst(AllocaInst &);
+  void visitBinaryOperator(BinaryOperator &);
+  void visitBranchInst(BranchInst &);
+  void visitCallInst(CallInst &);
+  void visitCastInst(CastInst &);
+  void visitExtractValueInst(ExtractValueInst &);
+  void visitGetElementPtrInst(GetElementPtrInst &);
+  void visitICmpInst(ICmpInst &);
+  void visitInsertValueInst(InsertValueInst &);
+  void visitLoadInst(LoadInst &);
+  void visitPHINode(PHINode &);
+  void visitReturnInst(ReturnInst &);
+  void visitStoreInst(StoreInst &);
+  void visitUnreachableInst(UnreachableInst &);
+
+  // Report error on unsupported instruction
+  void visitInstruction(Instruction &I) {
+    llvm_unreachable("Unsupported instruction");
+  }
+
+private:
+  void pushArg(Type *Ty, Value *V) {
     assert(V->getType() == Ty && "Argument type mismatch");
 
     ParamTypes.push_back(Ty);
     Arguments.push_back(V);
-  };
-
-  auto setBuilderName = [&BuilderName](const char *Name) {
-    assert(!BuilderName && "Builder name is already set");
-    BuilderName = Name;
-  };
-
-  if (Inst->isBinaryOp()) {
-    LLVMOpcode CAPIOpcode = LLVMGetInstructionOpcode(wrap(Inst));
-
-    pushArg(getOpcodeTy(B.getContext()),
-            ConstantInt::get(getOpcodeTy(B.getContext()), CAPIOpcode));
-    pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(0)));
-    pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(1)));
-    pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-    setBuilderName("BinOp");
-  } else if (Inst->isCast()) {
-    LLVMOpcode CAPIOpcode = LLVMGetInstructionOpcode(wrap(Inst));
-
-    pushArg(getOpcodeTy(B.getContext()),
-            ConstantInt::get(getOpcodeTy(B.getContext()), CAPIOpcode));
-    pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(0)));
-    pushArg(getTypePtrTy(B.getContext()), C.getType(Inst->getType()));
-    pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-    setBuilderName("Cast");
-  } else {
-    switch (Inst->getOpcode()) {
-    case Instruction::Alloca: {
-      auto *Alloca = cast<AllocaInst>(Inst);
-
-      pushArg(getTypePtrTy(B.getContext()),
-              C.getType(Alloca->getAllocatedType()));
-      if (Alloca->isArrayAllocation()) {
-        pushArg(getValuePtrTy(B.getContext()), stage(Alloca->getArraySize()));
-        setBuilderName("ArrayAlloca");
-      } else {
-        setBuilderName("Alloca");
-      }
-      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-      break;
-    }
-
-    case Instruction::Br: {
-      auto *Br = cast<BranchInst>(Inst);
-
-      if (Br->isConditional()) {
-        pushArg(getValuePtrTy(B.getContext()), stage(Br->getCondition()));
-        pushArg(getBasicBlockPtrTy(B.getContext()), stage(Br->getSuccessor(0)));
-        pushArg(getBasicBlockPtrTy(B.getContext()), stage(Br->getSuccessor(1)));
-        setBuilderName("CondBr");
-      } else {
-        pushArg(getBasicBlockPtrTy(B.getContext()), stage(Br->getSuccessor(0)));
-        setBuilderName("Br");
-      }
-      break;
-    }
-
-    case Instruction::Call: {
-      auto *Call = cast<CallInst>(Inst);
-
-      Value *Args = B.CreateAlloca(getValuePtrTy(B.getContext()),
-                                   B.getInt32(Call->getNumArgOperands()));
-
-      for (unsigned ArgNum = 0; ArgNum < Call->getNumArgOperands(); ++ArgNum) {
-        B.CreateStore(stage(Call->getArgOperand(ArgNum)),
-                      B.CreateGEP(Args, B.getInt32(ArgNum)));
-      }
-
-      pushArg(getValuePtrTy(B.getContext()), stage(Call->getCalledValue()));
-      pushArg(getValuePtrTy(B.getContext())->getPointerTo(), Args);
-      pushArg(getUnsignedIntTy(B.getContext()),
-              ConstantInt::get(getUnsignedIntTy(B.getContext()),
-                               Call->getNumArgOperands()));
-      pushArg(getCharPtrTy(B.getContext()), stage(Call->getName()));
-      setBuilderName("Call");
-      break;
-    }
-
-    case Instruction::ExtractValue: {
-      auto *EV = cast<ExtractValueInst>(Inst);
-      assert(EV->getNumIndices() == 1 &&
-             "Unsupported number of indices for extractvalue");
-
-      pushArg(getValuePtrTy(B.getContext()), stage(EV->getAggregateOperand()));
-      pushArg(getUnsignedIntTy(B.getContext()),
-              ConstantInt::get(getUnsignedIntTy(B.getContext()),
-                               EV->getIndices().front()));
-      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-      setBuilderName("ExtractValue");
-      break;
-    }
-
-    case Instruction::GetElementPtr: {
-      auto *GEP = cast<GetElementPtrInst>(Inst);
-
-      pushArg(getValuePtrTy(B.getContext()), stage(GEP->getPointerOperand()));
-
-      if (GEP->isInBounds() && GEP->getNumIndices() == 2 &&
-          GEP->hasAllConstantIndices() &&
-          cast<ConstantInt>(GEP->idx_begin())->isZero()) {
-        pushArg(getUnsignedIntTy(B.getContext()), *std::next(GEP->idx_begin()));
-        pushArg(getCharPtrTy(B.getContext()), stage(GEP->getName()));
-        setBuilderName("StructGEP");
-      } else {
-        Value *Indices = B.CreateAlloca(getValuePtrTy(B.getContext()),
-                                        B.getInt32(GEP->getNumIndices()));
-        auto IIter = GEP->idx_begin();
-
-        for (unsigned INum = 0; INum < GEP->getNumIndices(); ++INum)
-          B.CreateStore(stage(*IIter++),
-                        B.CreateGEP(Indices, B.getInt32(INum)));
-
-        pushArg(getValuePtrTy(B.getContext())->getPointerTo(), Indices);
-        pushArg(getUnsignedIntTy(B.getContext()),
-                ConstantInt::get(getUnsignedIntTy(B.getContext()),
-                                 GEP->getNumIndices()));
-        pushArg(getCharPtrTy(B.getContext()), stage(GEP->getName()));
-        setBuilderName(GEP->isInBounds() ? "InBoundsGEP" : "GEP");
-      }
-      break;
-    }
-
-    case Instruction::ICmp: {
-      LLVMIntPredicate CAPIIntPredicate = LLVMGetICmpPredicate(wrap(Inst));
-
-      pushArg(getIntPredicateTy(B.getContext()),
-              ConstantInt::get(getIntPredicateTy(B.getContext()),
-                               CAPIIntPredicate));
-      pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(0)));
-      pushArg(getValuePtrTy(B.getContext()), stage(Inst->getOperand(1)));
-      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-      setBuilderName("ICmp");
-      break;
-    }
-
-    case Instruction::InsertValue: {
-      auto *IV = cast<InsertValueInst>(Inst);
-      assert(IV->getNumIndices() == 1 &&
-             "Unsupported number of indices for insertvalue");
-
-      pushArg(getValuePtrTy(B.getContext()), stage(IV->getAggregateOperand()));
-      pushArg(getValuePtrTy(B.getContext()),
-              stage(IV->getInsertedValueOperand()));
-      pushArg(getUnsignedIntTy(B.getContext()),
-              ConstantInt::get(getUnsignedIntTy(B.getContext()),
-                               IV->getIndices().front()));
-      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-      setBuilderName("InsertValue");
-      break;
-    }
-
-    case Instruction::Load: {
-      auto *Load = cast<LoadInst>(Inst);
-
-      pushArg(getValuePtrTy(B.getContext()), stage(Load->getPointerOperand()));
-      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-      setBuilderName("Load");
-      break;
-    }
-
-    case Instruction::PHI: {
-      auto *Phi = cast<PHINode>(Inst);
-
-      pushArg(getTypePtrTy(B.getContext()), C.getType(Phi->getType()));
-      pushArg(getCharPtrTy(B.getContext()), stage(Inst->getName()));
-      setBuilderName("Phi");
-      break;
-    }
-
-    case Instruction::Store: {
-      auto *Store = cast<StoreInst>(Inst);
-
-      pushArg(getValuePtrTy(B.getContext()), stage(Store->getValueOperand()));
-      pushArg(getValuePtrTy(B.getContext()), stage(Store->getPointerOperand()));
-      setBuilderName("Store");
-      break;
-    }
-
-    case Instruction::Ret: {
-      auto *Ret = cast<ReturnInst>(Inst);
-
-      if (auto *ReturnValue = Ret->getReturnValue()) {
-        pushArg(getValuePtrTy(B.getContext()), stage(ReturnValue));
-        setBuilderName("Ret");
-      } else {
-        setBuilderName("RetVoid");
-      }
-      break;
-    }
-
-    case Instruction::Unreachable: {
-      setBuilderName("Unreachable");
-      break;
-    }
-
-    default:
-      llvm_unreachable("Unsupported instruction");
-    }
   }
 
+  void setBuilderName(const char *Name) {
+    assert(!BuilderName && "Builder name is already set");
+    BuilderName = Name;
+  }
+
+  StagedIRBuilder<IRBuilder> &SB;
+  IRBuilder &B;
+  MixContext &C;
+  std::vector<Type *> ParamTypes;
+  std::vector<Value *> Arguments;
+  const char *BuilderName = nullptr;
+};
+
+} // namespace detail
+
+template <typename IRBuilder>
+Instruction *
+detail::StagedInstructionBuilder<IRBuilder>::stage(Instruction *I) {
+  Module &M = *B.GetInsertBlock()->getModule();
+
+  this->visit(I);
   assert(BuilderName && "Builder name is not set");
 
-  Instruction *StagedInst = B.CreateCall(
-      getModule().getOrInsertFunction(
+  return B.CreateCall(
+      M.getOrInsertFunction(
           "LLVMBuild"s + BuilderName,
           FunctionType::get(getValuePtrTy(B.getContext()), ParamTypes, false)),
-      Arguments, Inst->getName());
-  stageInstructionMetadata(StagedInst, Inst);
-  return StagedInst;
+      Arguments, I->getName());
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitAllocaInst(
+    AllocaInst &I) {
+  pushArg(getTypePtrTy(B.getContext()), C.getType(I.getAllocatedType()));
+
+  if (I.isArrayAllocation()) {
+    pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getArraySize()));
+    setBuilderName("ArrayAlloca");
+  } else {
+    setBuilderName("Alloca");
+  }
+
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitBinaryOperator(
+    BinaryOperator &I) {
+  LLVMOpcode CAPIOpcode = LLVMGetInstructionOpcode(wrap(&I));
+
+  pushArg(getOpcodeTy(B.getContext()),
+          ConstantInt::get(getOpcodeTy(B.getContext()), CAPIOpcode));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getOperand(0)));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getOperand(1)));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("BinOp");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitBranchInst(
+    BranchInst &I) {
+  if (I.isUnconditional()) {
+    pushArg(getBasicBlockPtrTy(B.getContext()), SB.stage(I.getSuccessor(0)));
+    setBuilderName("Br");
+    return;
+  }
+
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getCondition()));
+  pushArg(getBasicBlockPtrTy(B.getContext()), SB.stage(I.getSuccessor(0)));
+  pushArg(getBasicBlockPtrTy(B.getContext()), SB.stage(I.getSuccessor(1)));
+  setBuilderName("CondBr");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitCallInst(CallInst &I) {
+  Value *Args = B.CreateAlloca(getValuePtrTy(B.getContext()),
+                               B.getInt32(I.getNumArgOperands()));
+
+  for (unsigned ArgNum = 0; ArgNum < I.getNumArgOperands(); ++ArgNum)
+    B.CreateStore(SB.stage(I.getArgOperand(ArgNum)),
+                  B.CreateGEP(Args, B.getInt32(ArgNum)));
+
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getCalledValue()));
+  pushArg(getValuePtrTy(B.getContext())->getPointerTo(), Args);
+  pushArg(getUnsignedIntTy(B.getContext()),
+          ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                           I.getNumArgOperands()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("Call");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitCastInst(CastInst &I) {
+  LLVMOpcode CAPIOpcode = LLVMGetInstructionOpcode(wrap(&I));
+
+  pushArg(getOpcodeTy(B.getContext()),
+          ConstantInt::get(getOpcodeTy(B.getContext()), CAPIOpcode));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getOperand(0)));
+  pushArg(getTypePtrTy(B.getContext()), C.getType(I.getType()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("Cast");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitExtractValueInst(
+    ExtractValueInst &I) {
+  assert(I.getNumIndices() == 1 &&
+         "Unsupported number of indices for extractvalue");
+
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getAggregateOperand()));
+  pushArg(getUnsignedIntTy(B.getContext()),
+          ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                           I.getIndices().front()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("ExtractValue");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitGetElementPtrInst(
+    GetElementPtrInst &I) {
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getPointerOperand()));
+
+  if (I.isInBounds() && I.getNumIndices() == 2 && I.hasAllConstantIndices() &&
+      cast<ConstantInt>(I.idx_begin())->isZero()) {
+    pushArg(getUnsignedIntTy(B.getContext()), *std::next(I.idx_begin()));
+    pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+    setBuilderName("StructGEP");
+    return;
+  }
+
+  Value *Indices = B.CreateAlloca(getValuePtrTy(B.getContext()),
+                                  B.getInt32(I.getNumIndices()));
+  auto IIter = I.idx_begin();
+
+  for (unsigned INum = 0; INum < I.getNumIndices(); ++INum)
+    B.CreateStore(SB.stage(*IIter++), B.CreateGEP(Indices, B.getInt32(INum)));
+
+  pushArg(getValuePtrTy(B.getContext())->getPointerTo(), Indices);
+  pushArg(
+      getUnsignedIntTy(B.getContext()),
+      ConstantInt::get(getUnsignedIntTy(B.getContext()), I.getNumIndices()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName(I.isInBounds() ? "InBoundsGEP" : "GEP");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitICmpInst(ICmpInst &I) {
+  LLVMIntPredicate CAPIIntPredicate = LLVMGetICmpPredicate(wrap(&I));
+
+  pushArg(
+      getIntPredicateTy(B.getContext()),
+      ConstantInt::get(getIntPredicateTy(B.getContext()), CAPIIntPredicate));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getOperand(0)));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getOperand(1)));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("ICmp");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitInsertValueInst(
+    InsertValueInst &I) {
+  assert(I.getNumIndices() == 1 &&
+         "Unsupported number of indices for insertvalue");
+
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getAggregateOperand()));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getInsertedValueOperand()));
+  pushArg(getUnsignedIntTy(B.getContext()),
+          ConstantInt::get(getUnsignedIntTy(B.getContext()),
+                           I.getIndices().front()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("InsertValue");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitLoadInst(LoadInst &I) {
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getPointerOperand()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("Load");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitPHINode(PHINode &I) {
+  pushArg(getTypePtrTy(B.getContext()), C.getType(I.getType()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("Phi");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitReturnInst(
+    ReturnInst &I) {
+  if (!I.getReturnValue()) {
+    setBuilderName("RetVoid");
+    return;
+  }
+
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getReturnValue()));
+  setBuilderName("Ret");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitStoreInst(StoreInst &I) {
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getValueOperand()));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getPointerOperand()));
+  setBuilderName("Store");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitUnreachableInst(
+    UnreachableInst &I) {
+  setBuilderName("Unreachable");
+}
+
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *I) {
+  Instruction *SI = detail::StagedInstructionBuilder<IRBuilder>(*this).stage(I);
+
+  stageInstructionMetadata(SI, I);
+  return SI;
 }
 
 template <typename IRBuilder>
