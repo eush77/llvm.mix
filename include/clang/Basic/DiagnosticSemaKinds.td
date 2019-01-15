@@ -3425,7 +3425,7 @@ def err_attribute_cleanup_func_arg_incompatible_type : Error<
   "'cleanup' function %0 parameter has "
   "%diff{type $ which is incompatible with type $|incompatible type}1,2">;
 def err_attribute_mix_arg_function
-    : Error<"'mix' argument%select{| %2| %2| %2}0 does not refer to "
+    : Error<"'mix' argument%select{| %1| %1| %1}0 does not refer to "
             "a%select{||| staged}0 function%select{|| with a body|}0">;
 def err_attribute_mix_return_type : Error<"Expected a pointer return type from "
                                           "a function with 'mix' attribute">;
