@@ -51,6 +51,7 @@
 // Function definitions
 //
 
+HANDLE_API_FUNCTION(AddCase, VOID, IR_VALUE, IR_VALUE, IR_BASICBLOCK)
 HANDLE_API_FUNCTION(AddFunction, IR_VALUE, IR_MODULE, CHAR_PTR, IR_TYPE)
 HANDLE_API_FUNCTION(AddIncoming, VOID, IR_VALUE, IR_VALUE->getPointerTo(),
                     IR_BASICBLOCK->getPointerTo(), UINT)

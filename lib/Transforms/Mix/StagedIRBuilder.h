@@ -122,6 +122,7 @@ private:
   Instruction *stageBasicBlock(BasicBlock *Block);
   void stageIncomingList(PHINode *Phi, Instruction *StagedPhi);
   Instruction *stageInstruction(Instruction *Inst);
+  void stageSwitchCases(Instruction *StagedInst, SwitchInst *);
   void stageInstructionMetadata(Instruction *StagedInst, Instruction *Inst);
   Instruction *stageMetadata(Metadata *);
   Instruction *stageMDNode(MDNode *);
@@ -316,6 +317,7 @@ public:
   void visitPHINode(PHINode &);
   void visitReturnInst(ReturnInst &);
   void visitStoreInst(StoreInst &);
+  void visitSwitchInst(SwitchInst &);
   void visitUnreachableInst(UnreachableInst &);
 
   // Report error on unsupported instruction
@@ -538,6 +540,16 @@ void detail::StagedInstructionBuilder<IRBuilder>::visitStoreInst(StoreInst &I) {
 }
 
 template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitSwitchInst(
+    SwitchInst &I) {
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getCondition()));
+  pushArg(getBasicBlockPtrTy(B.getContext()), SB.stage(I.getDefaultDest()));
+  pushArg(getUnsignedIntTy(B.getContext()),
+          ConstantInt::get(getUnsignedIntTy(B.getContext()), I.getNumCases()));
+  setBuilderName("Switch");
+}
+
+template <typename IRBuilder>
 void detail::StagedInstructionBuilder<IRBuilder>::visitUnreachableInst(
     UnreachableInst &I) {
   setBuilderName("Unreachable");
@@ -547,8 +559,20 @@ template <typename IRBuilder>
 Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *I) {
   Instruction *SI = detail::StagedInstructionBuilder<IRBuilder>(*this).stage(I);
 
+  if (auto *Switch = dyn_cast<SwitchInst>(I))
+    stageSwitchCases(SI, Switch);
+
   stageInstructionMetadata(SI, I);
   return SI;
+}
+
+template <typename IRBuilder>
+void StagedIRBuilder<IRBuilder>::stageSwitchCases(Instruction *StagedInst,
+                                                  SwitchInst *I) {
+  for (const SwitchInst::CaseHandle &Case : I->cases())
+    B.CreateCall(getAddCaseFn(getModule()),
+                 {StagedInst, stage(Case.getCaseValue()),
+                  stage(Case.getCaseSuccessor())});
 }
 
 template <typename IRBuilder>
