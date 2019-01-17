@@ -1,7 +1,5 @@
 ; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not="; stage"
 
-declare i32* @llvm.object.stage.p0i32(i32*, i32)
-
 ; CHECK-LABEL: define {{.*}} @load
 define i32 @load(i32 *%p) stage(1) {
 ; CHECK-NEXT: stage(0)
@@ -49,3 +47,15 @@ define void @store2(i32* %p, i32 %x, i32 stage(1) %dummy) stage(2) {
   store i32 %x, i32* %p1                            ; CHECK-NEXT: stage(2)
   ret void                                          ; CHECK-NEXT: stage(2)
 }
+
+; CHECK-LABEL: define i32 @inbounds
+define i32 @inbounds([2 x i32]* %p) stage(1) {
+; CHECK-NEXT: stage(0)
+  %p1 = call [2 x i32]* @llvm.object.stage.p0a2i32([2 x i32]* %p, i32 0) ; CHECK-NEXT: stage(0)
+  %p2 = getelementptr inbounds [2 x i32], [2 x i32]* %p1, i32 0, i32 1 ; CHECK-NEXT: stage(0)
+  %x = load i32, i32* %p2                            ; CHECK-NEXT: stage(0)
+  ret i32 %x                                         ; CHECK-NEXT: stage(0)
+}
+
+declare i32* @llvm.object.stage.p0i32(i32*, i32)
+declare [2 x i32]* @llvm.object.stage.p0a2i32([2 x i32]*, i32)

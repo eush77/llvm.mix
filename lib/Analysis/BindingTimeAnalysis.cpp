@@ -67,6 +67,14 @@ using namespace std::placeholders;
 #define DEBUG_TYPE "bta"
 
 const IntrinsicInst *llvm::getObjectStageAnnotation(const Value *V) {
+  // Look through inbounds GEP
+  while (auto *GEP = dyn_cast<GetElementPtrInst>(V)) {
+    if (GEP->isInBounds())
+      V = GEP->getPointerOperand();
+    else
+      break;
+  }
+
   if (auto *I = dyn_cast<IntrinsicInst>(V)) {
     if (I->getIntrinsicID() == Intrinsic::object_stage) {
       return I;
