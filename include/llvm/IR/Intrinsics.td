@@ -686,7 +686,7 @@ def int_eh_sjlj_setup_dispatch  : Intrinsic<[], []>;
 
 def int_object_stage : Intrinsic<[LLVMAnyPointerType<llvm_any_ty>],
                                  [LLVMMatchType<0>, llvm_i32_ty],
-                                 [IntrNoMem, NoCapture<0>, Returned<0>]>;
+                                 [IntrNoMem, NoCapture<0>]>;
 
 def int_mix
     : Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_ptr_ty, llvm_vararg_ty],
