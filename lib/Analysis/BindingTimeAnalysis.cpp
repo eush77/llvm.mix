@@ -43,6 +43,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/PassSupport.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
@@ -64,6 +65,9 @@ using namespace llvm;
 using namespace std::placeholders;
 
 #define DEBUG_TYPE "bta"
+
+static cl::opt<bool> PrintBTA("print-bta", cl::Hidden,
+                              cl::desc("Print binding-time analysis results"));
 
 const IntrinsicInst *llvm::getObjectStageAnnotation(const Value *V) {
   // Look through inbounds GEP
@@ -414,6 +418,10 @@ bool BindingTimeAnalysis::runOnFunction(Function &F) {
 
   initializeWorklist();
   fix();
+
+  if (PrintBTA)
+    print(dbgs(), F.getParent());
+
   return false;
 }
 
