@@ -713,58 +713,61 @@ public:
       : Base(BTA), F(F) {}
 
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
-                                formatted_raw_ostream &OS) override {
-    if (BTA.getStage(BB) < F.getLastStage()) {
-      setColor(OS);
-    }
-
-    Base::emitBasicBlockStartAnnot(BB, OS);
-    resetColor(OS);
-  }
+                                formatted_raw_ostream &OS) override;
 
   void emitInstructionAnnot(const Instruction *I,
-                            formatted_raw_ostream &OS) override {
-    // Set color for the static instruction.
-    if (BTA.getStage(I) < F.getLastStage()) {
-      setColor(OS);
-    }
-  }
+                            formatted_raw_ostream &OS) override;
 
-  void printInfoComment(const Value &V, formatted_raw_ostream &OS) override {
-    Base::printInfoComment(V, OS);
-
-    // Reset color after a static instruction.
-    if (BTA.getStage(&V) < F.getLastStage()) {
-      resetColor(OS);
-    }
-
-    // Set the color for the name of the next static basic block.
-    if (auto *I = dyn_cast<Instruction>(&V)) {
-      if (I->isTerminator()) {
-        Function::const_iterator BB(I->getParent());
-        Function::const_iterator NextBB(std::next(BB));
-
-        if (NextBB != BB->getParent()->end() &&
-            BTA.getStage(&*NextBB) < F.getLastStage()) {
-          setColor(OS);
-        }
-      }
-    }
-  }
+  void printInfoComment(const Value &V, formatted_raw_ostream &OS) override;
 
 private:
   static void setColor(formatted_raw_ostream &OS) {
     OS.changeColor(raw_ostream::YELLOW, false, false);
   }
 
-  static void resetColor(formatted_raw_ostream &OS) {
-    OS.resetColor();
-  }
+  static void resetColor(formatted_raw_ostream &OS) { OS.resetColor(); }
 
   const Function &F;
 };
 
 } // namespace llvm
+
+void BindingTimeAnalysisColorAssemblyAnnotationWriter::emitBasicBlockStartAnnot(
+    const BasicBlock *BB, formatted_raw_ostream &OS) {
+  if (BTA.getStage(BB) < F.getLastStage())
+    setColor(OS);
+
+  Base::emitBasicBlockStartAnnot(BB, OS);
+  resetColor(OS);
+}
+
+void BindingTimeAnalysisColorAssemblyAnnotationWriter::emitInstructionAnnot(
+    const Instruction *I, formatted_raw_ostream &OS) {
+  // Set color for the static instruction.
+  if (BTA.getStage(I) < F.getLastStage())
+    setColor(OS);
+}
+
+void BindingTimeAnalysisColorAssemblyAnnotationWriter::printInfoComment(
+    const Value &V, formatted_raw_ostream &OS) {
+  Base::printInfoComment(V, OS);
+
+  // Reset color after a static instruction.
+  if (BTA.getStage(&V) < F.getLastStage())
+    resetColor(OS);
+
+  // Set the color for the name of the next static basic block.
+  if (auto *I = dyn_cast<Instruction>(&V)) {
+    if (I->isTerminator()) {
+      Function::const_iterator BB(I->getParent());
+      Function::const_iterator NextBB(std::next(BB));
+
+      if (NextBB != BB->getParent()->end() &&
+          BTA.getStage(&*NextBB) < F.getLastStage())
+        setColor(OS);
+    }
+  }
+}
 
 namespace {
 
@@ -778,16 +781,7 @@ public:
       const BindingTimeAnalysis &BTA)
       : BTA(BTA) {}
 
-  void emitFunctionAnnot(const Function *F,
-                         formatted_raw_ostream &OS) override {
-    if (OS.has_colors()) {
-      Impl.reset(new BindingTimeAnalysisColorAssemblyAnnotationWriter(*F, BTA));
-    } else {
-      Impl.reset(new BindingTimeAnalysisPlainAssemblyAnnotationWriter(BTA));
-    }
-
-    Impl->emitFunctionAnnot(F, OS);
-  }
+  void emitFunctionAnnot(const Function *F, formatted_raw_ostream &OS) override;
 
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
                                 formatted_raw_ostream &OS) override {
@@ -815,6 +809,17 @@ private:
 
 } // namespace
 
+void BindingTimeAnalysisAssemblyAnnotationWriter::emitFunctionAnnot(
+    const Function *F, formatted_raw_ostream &OS) {
+  if (OS.has_colors()) {
+    Impl.reset(new BindingTimeAnalysisColorAssemblyAnnotationWriter(*F, BTA));
+  } else {
+    Impl.reset(new BindingTimeAnalysisPlainAssemblyAnnotationWriter(BTA));
+  }
+
+  Impl->emitFunctionAnnot(F, OS);
+}
+
 void BindingTimeAnalysis::print(raw_ostream &OS, const Module *) const {
   assert(F && "No function to print");
 
@@ -829,9 +834,7 @@ char BindingTimeAnalysis::ID;
 
 INITIALIZE_PASS(BindingTimeAnalysis, "bta", "Binding-Time Analysis", true, true)
 
-namespace {
-
-DiagnosticLocation getLocation(const Value *V) {
+static DiagnosticLocation getLocation(const Value *V) {
   if (auto *A = dyn_cast<Argument>(V)) {
     return A->getParent()->getSubprogram();
   } else if (auto *F = dyn_cast<Function>(V)) {
@@ -841,8 +844,6 @@ DiagnosticLocation getLocation(const Value *V) {
   }
   return {};
 }
-
-} // namespace
 
 DiagnosticInfoBindingTime::DiagnosticInfoBindingTime(
     DiagnosticSeverity Severity, const Function &F, const Twine &Fmt,
