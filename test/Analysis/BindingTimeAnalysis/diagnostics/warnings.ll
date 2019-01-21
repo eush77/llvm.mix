@@ -1,17 +1,19 @@
 ; RUN: opt -disable-output -bta %s 2>&1 | FileCheck %s --implicit-check-not="{{[^ ]}}"
 
 ; CHECK: warning: foo.c:5:5: in manyterm: Multiple stage(0) terminators of the entry block:
-; CHECK: br label %exit, {{.*}}  ; stage(0), in %left
+; CHECK: br label %left.exit, {{.*}}   ; stage(0), in %left
 ; CHECK: note: foo.c:6:6: in manyterm: Previous terminator is moved to stage(1):
-; CHECK: br label %exit, {{.*}}  ; stage(0), in %right
-define i32 @manyterm(i1 stage(1) %x) stage(1) !dbg !3 {
+; CHECK: br label %right.exit, {{.*}}  ; stage(0), in %right
+define void @manyterm(i1 stage(1) %x) stage(1) !dbg !3 {
   br i1 %x, label %left, label %right
 left:
-  br label %exit, !dbg !5
+  br label %left.exit, !dbg !5
 right:
-  br label %exit, !dbg !6
-exit:
-  ret i32 1
+  br label %right.exit, !dbg !6
+left.exit:
+  ret void
+right.exit:
+  ret void
 }
 
 ; CHECK: warning: foo.c:9:9: in manyterm1: Multiple stage(0) terminators of basic block %fork:

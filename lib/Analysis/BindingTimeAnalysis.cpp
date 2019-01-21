@@ -312,7 +312,7 @@ void BindingTimeAnalysis::initializeWorklist() {
   }
 }
 
-// At each stage, every basic block has to have at most one terminator.
+// At each stage, every basic block has to have at most one unique terminator.
 void BindingTimeAnalysis::fixTerminators() {
   for (auto &SourceBB : *F) {
     for (unsigned Stage = getStage(&SourceBB); Stage <= F->getLastStage();
@@ -334,7 +334,8 @@ void BindingTimeAnalysis::fixTerminators() {
           continue;
         }
 
-        assert(T != Term);
+        if (Term->isIdenticalTo(T))
+          continue;
 
         // Favor lower-stage terminators.
         if (getStage(T) < getStage(Term)) {
