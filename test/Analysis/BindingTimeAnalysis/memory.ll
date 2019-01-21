@@ -1,4 +1,4 @@
-; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not="; stage"
+; RUN: opt -analyze -bta %s 2>&1 | FileCheck %s --implicit-check-not="; stage"
 
 ; CHECK-LABEL: define {{.*}} @load
 define i32 @load(i32 *%p) stage(1) {

@@ -37,6 +37,7 @@ class DiagnosticPrinter;
 class Function;
 class Instruction;
 class IntrinsicInst;
+class Module;
 class PHINode;
 class raw_ostream;
 class TerminatorInst;
@@ -65,8 +66,8 @@ public:
   // block. This function return the stage of its value.
   unsigned getPhiValueBindingTime(const PHINode *Phi) const;
 
-  using FunctionPass::print;
-  void print(raw_ostream &OS, const Function &F);
+  // Print results for last analyzed function.
+  void print(raw_ostream &OS, const Module *M) const override;
 
 private:
   friend class BindingTimeAnalysisPlainAssemblyAnnotationWriter;

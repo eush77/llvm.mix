@@ -1,4 +1,4 @@
-; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=stage
+; RUN: opt -analyze -bta %s 2>&1 | FileCheck %s --implicit-check-not=stage
 
 ; CHECK-LABEL: Function Attrs: stage(2)
 ; CHECK-NEXT: @f(i32 %x, i32 stage(1) %y, i32 stage(2) %z)

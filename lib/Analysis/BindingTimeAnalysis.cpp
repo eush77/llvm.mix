@@ -38,10 +38,9 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Use.h"
 #include "llvm/IR/Value.h"
-#include "llvm/Pass.h"
-#include "llvm/PassAnalysisSupport.h"
 #include "llvm/PassSupport.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
@@ -389,12 +388,14 @@ void BindingTimeAnalysis::fix() {
 }
 
 bool BindingTimeAnalysis::runOnFunction(Function &F) {
-  if (!F.isStaged())
-    return false;
-
   LLVM_DEBUG(dbgs() << "---- BTA : " << F.getName() << " ----\n\n");
 
   this->F = &F;
+
+  if (!F.isStaged()) {
+    LLVM_DEBUG(dbgs() << "Function is not staged\n\n");
+    return false;
+  }
 
   // Initialize slot tracker for printing.
   MST.emplace(F.getParent());
@@ -676,7 +677,7 @@ class BindingTimeAnalysisPlainAssemblyAnnotationWriter
     : public AssemblyAnnotationWriter {
 public:
   explicit BindingTimeAnalysisPlainAssemblyAnnotationWriter(
-      BindingTimeAnalysis &BTA)
+      const BindingTimeAnalysis &BTA)
       : BTA(BTA) {}
 
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
@@ -689,7 +690,7 @@ public:
   }
 
 protected:
-  BindingTimeAnalysis &BTA;
+  const BindingTimeAnalysis &BTA;
 
 private:
   Printable printStage(const Value *V) const {
@@ -707,8 +708,8 @@ class BindingTimeAnalysisColorAssemblyAnnotationWriter
   using Base = BindingTimeAnalysisPlainAssemblyAnnotationWriter;
 
 public:
-  BindingTimeAnalysisColorAssemblyAnnotationWriter(const Function &F,
-                                                   BindingTimeAnalysis &BTA)
+  BindingTimeAnalysisColorAssemblyAnnotationWriter(
+      const Function &F, const BindingTimeAnalysis &BTA)
       : Base(BTA), F(F) {}
 
   void emitBasicBlockStartAnnot(const BasicBlock *BB,
@@ -773,7 +774,8 @@ namespace {
 class BindingTimeAnalysisAssemblyAnnotationWriter
     : public AssemblyAnnotationWriter {
 public:
-  explicit BindingTimeAnalysisAssemblyAnnotationWriter(BindingTimeAnalysis &BTA)
+  explicit BindingTimeAnalysisAssemblyAnnotationWriter(
+      const BindingTimeAnalysis &BTA)
       : BTA(BTA) {}
 
   void emitFunctionAnnot(const Function *F,
@@ -807,53 +809,25 @@ public:
   }
 
 private:
-  BindingTimeAnalysis &BTA;
+  const BindingTimeAnalysis &BTA;
   std::unique_ptr<AssemblyAnnotationWriter> Impl;
 };
 
 } // namespace
 
-void BindingTimeAnalysis::print(raw_ostream &OS, const Function &F) {
-  assert(F.isStaged() && "Function is not staged");
+void BindingTimeAnalysis::print(raw_ostream &OS, const Module *) const {
+  assert(F && "No function to print");
+
+  if (!F->isStaged())
+    return;
 
   BindingTimeAnalysisAssemblyAnnotationWriter AAW(*this);
-  F.print(OS, &AAW);
+  F->print(OS, &AAW);
 }
 
 char BindingTimeAnalysis::ID;
 
 INITIALIZE_PASS(BindingTimeAnalysis, "bta", "Binding-Time Analysis", true, true)
-
-namespace {
-
-class BindingTimeAnalysisPrinter : public FunctionPass {
-public:
-  static char ID;
-
-  BindingTimeAnalysisPrinter() : FunctionPass(ID) {}
-
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.addRequired<BindingTimeAnalysis>();
-    AU.setPreservesAll();
-  }
-
-  bool runOnFunction(Function &F) override {
-    if (F.isStaged()) {
-      getAnalysis<BindingTimeAnalysis>().print(errs(), F);
-    }
-    return false;
-  }
-};
-
-char BindingTimeAnalysisPrinter::ID;
-
-} // namespace
-
-INITIALIZE_PASS_BEGIN(BindingTimeAnalysisPrinter, "print-bta",
-                      "Binding-Time Analysis Printer", false, true)
-INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
-INITIALIZE_PASS_END(BindingTimeAnalysisPrinter, "print-bta",
-                    "Binding-Time Analysis Printer", false, true)
 
 namespace {
 

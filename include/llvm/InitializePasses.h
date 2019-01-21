@@ -78,7 +78,6 @@ void initializeBDCELegacyPassPass(PassRegistry&);
 void initializeBarrierNoopPass(PassRegistry&);
 void initializeBasicAAWrapperPassPass(PassRegistry&);
 void initializeBindingTimeAnalysisPass(PassRegistry&);
-void initializeBindingTimeAnalysisPrinterPass(PassRegistry&);
 void initializeBlockExtractorPass(PassRegistry &);
 void initializeBlockFrequencyInfoWrapperPassPass(PassRegistry&);
 void initializeBoundsCheckingLegacyPassPass(PassRegistry&);

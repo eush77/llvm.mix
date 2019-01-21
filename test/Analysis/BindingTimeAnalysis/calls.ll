@@ -1,4 +1,4 @@
-; RUN: opt -disable-output -print-bta %s 2>&1 | FileCheck %s --implicit-check-not=stage
+; RUN: opt -analyze -bta %s 2>&1 | FileCheck %s --implicit-check-not=stage
 
 define i32 @e(i32 %x) {
   %y = add i32 %x, 1
