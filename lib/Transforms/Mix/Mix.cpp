@@ -18,6 +18,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator_range.h"
@@ -32,6 +33,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -92,6 +94,7 @@ private:
   };
 
   Value *visitMixIntrinsicInst(IntrinsicInst &);
+  template <typename OutputIt> void getMixedFunctions(Function &, OutputIt);
   StagedFunctionInfo declareFunction(Function &) const;
   Function *buildMain(Function &F, Function &SourceF, MixContextTable &) const;
   void buildFunction(Function &SourceF, const StagedFunctionInfo &SFI,
@@ -174,68 +177,121 @@ bool Mix::runOnModule(Module &M) {
   return MadeChange;
 }
 
+// Output staged functions directly or transitively called from the given
+// entry point
+template <typename OutputIt>
+void Mix::getMixedFunctions(Function &Entry, OutputIt Out) {
+  // Entry nodes to iterate from - each call to llvm.mix.call requires
+  // iterating from a new entry point
+  SmallSetVector<const CallGraphNode *, 4> EntryNodes;
+  EntryNodes.insert((*CG)[&Entry]);
+
+  for (unsigned ENNum = 0; ENNum < EntryNodes.size(); ++ENNum) {
+    const CallGraphNode *Entry = EntryNodes[ENNum];
+
+    for (auto CGN = df_begin(Entry); CGN != df_end(Entry);) {
+      Function *F = CGN->getFunction();
+
+      if (!F || !F->isStaged()) {
+        CGN.skipChildren();
+        continue;
+      }
+
+      Out++ = F;
+
+      // Scan functions that call the external node for calls to
+      // `llvm.mix.call` - this intrinsic does expand to a call to its first
+      // argument, but these edges are not included in the call graph.
+      //
+      // All functions calling `llvm.mix.call` will necessarily call the
+      // external node in the call graph because `llvm.mix.call` is a non-leaf
+      // intrinsic (see `Intrinsic::isLeaf`).
+      if (std::any_of(CGN->begin(), CGN->end(),
+                      [&](const CallGraphNode::CallRecord &CR) {
+                        return CR.second == CG->getCallsExternalNode();
+                      })) {
+        for (Instruction &I : instructions(F)) {
+          if (auto *II = dyn_cast<IntrinsicInst>(&I)) {
+            if (II->getIntrinsicID() != Intrinsic::mix_call)
+              continue;
+
+            auto *F = cast<Function>(II->getArgOperand(0)->stripPointerCasts());
+
+            // Add an entry point
+            EntryNodes.insert((*CG)[F]);
+          }
+        }
+      }
+
+      ++CGN;
+    }
+  }
+}
+
 Value *Mix::visitMixIntrinsicInst(IntrinsicInst &I) {
   Function *MainF =
       cast<Function>(cast<ConstantExpr>(I.getArgOperand(0))->getOperand(0));
 
-  // Run BTA on function. Skip first invocation if BTA is not initialized,
-  // because its initialization involves running BTA on the entry function.
-  auto RunBTA = [ this, SkipNext = !BTA ](Function & F) mutable {
-    if (SkipNext)
-      SkipNext = false;
-    else
-      BTA->runOnFunction(F);
-  };
-
-  // Initialize BTA.
-  if (!BTA)
-    BTA = &getAnalysis<BindingTimeAnalysis>(*MainF);
-
   // All functions staged for this intrinsic call
   std::vector<Function *> Functions;
+  getMixedFunctions(*MainF, std::back_inserter(Functions));
 
-  // Analyze all called functions
-  const CallGraphNode *MixedCGN = (*CG)[MainF];
-  for (auto CGN = df_begin(MixedCGN); CGN != df_end(MixedCGN);) {
-    auto *F = CGN->getFunction();
+  auto DedupFunctions = [&]() {
+    std::sort(Functions.begin(), Functions.end());
+    Functions.erase(std::unique(Functions.begin(), Functions.end()),
+                    Functions.end());
+  };
+  DedupFunctions();
 
-    if (F && F->isStaged()) {
-      RunBTA(*F);
-      Functions.push_back(F);
-      ++CGN;
-    } else {
-      CGN.skipChildren();
-    }
-  }
-
-  // Print Mix header after the analysis.
-  LLVM_DEBUG(dbgs() << "---- Mix : @" << MainF->getName() << " ----\n"
-                    << "Creating code generator in @"
-                    << I.getFunction()->getName() << '\n'
-                    << I << "\n\n");
-
-  for (unsigned Stage = MainF->getLastStage(); Stage--;) {
+  for (unsigned LastStage = MainF->getLastStage(), Stage = 0; Stage < LastStage;
+       ++Stage) {
     MixContextTable T(B->getContext());
     auto ClearFunctionMapOnExit =
         make_scope_exit(std::bind(&decltype(FunctionMap)::clear, &FunctionMap));
 
     assert(FunctionMap.empty() && "FunctionMap is not empty");
 
-    for (auto *F : Functions)
+    for (auto *F : Functions) {
+      if (!BTA)
+        BTA = &getAnalysis<BindingTimeAnalysis>(*F);
+      else
+        BTA->runOnFunction(*F);
+
       FunctionMap[F] = declareFunction(*F);
+    }
+
+    // Print Mix header after the analysis
+    LLVM_DEBUG({
+      dbgs() << "---- Mix[" << Stage << "] : @" << MainF->getName()
+             << " ----\n";
+
+      if (Stage == 0)
+        dbgs() << "Creating code generator in @" << I.getFunction()->getName()
+               << '\n'
+               << I << "\n\n";
+
+      dbgs() << "Staged functions:";
+      const char *Delim = " ";
+
+      for (Function *F : Functions) {
+        dbgs() << Delim << F->getName();
+        Delim = ", ";
+      }
+
+      dbgs() << "\n\n";
+    });
 
     // Clear all functions from the previous stage
     Functions.clear();
 
     for (auto &P : FunctionMap) {
       buildFunction(*P.first, P.second, T);
-      BTA->runOnFunction(*P.second.Mix);
       Functions.push_back(P.second.Mix);
     }
 
     MainF = buildMain(*FunctionMap.lookup(MainF).Mix, *MainF, T);
-    BTA->runOnFunction(*MainF);
     Functions.push_back(MainF);
+    DedupFunctions();
   }
 
   SmallVector<Value *, 4> Args;
