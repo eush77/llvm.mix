@@ -452,23 +452,30 @@ Instruction *traverseDynamicBlocks(BasicBlock &Start, OutputIt Out,
   BasicBlock *Term = nullptr;
 
   for (auto B = df_begin(&Start); B != df_end(&Start);) {
-    if (BTA.getStage((*B)->getTerminator()) < B->getParent()->getLastStage()) {
-      assert(!Term &&
-             "Multiple static terminators reachable from a static block");
+    if (BTA.getStage((*B)->getTerminator()) >= B->getParent()->getLastStage()) {
+      *Out++ = *B++;
+      continue;
+    }
+
+    // Static terminator found, check if it is the first one
+    if (!Term) {
       Term = *B;
       B.skipChildren();
       continue;
     }
 
-    *Out++ = *B++;
+    assert(Term->getTerminator()->isIdenticalTo((*B)->getTerminator()) &&
+           "Different static terminators reachable from a static block");
+    *Out = *B;
+    B.skipChildren();
   }
 
-  if (Term) {
-    *Out++ = Term;
-    return Term->getTerminator();
-  }
+  if (!Term)
+    return nullptr;
 
-  return nullptr;
+  // Output the block with a static terminator last
+  Out++ = Term;
+  return Term->getTerminator();
 }
 
 } // namespace
@@ -495,8 +502,15 @@ void Mix::buildBasicBlock(BasicBlock &SourceBB) const {
 
     SB->positionBuilderAtEnd(SB->stage(BB, true));
 
-    std::for_each(BB->begin(), BB->end(),
+    std::for_each(BB->begin(), std::prev(BB->end()),
                   std::bind(&Mix::buildInstruction, this, _1));
+
+    // Don't build static terminators of all but the last block in the
+    // sequence. All other static terminators must be identical to that one
+    // and should be ignored.
+    if (BTA->getStage(BB->getTerminator()) >= SourceF->getLastStage() ||
+        BB == Blocks.back())
+      buildInstruction(*BB->getTerminator());
   }
 
   LLVM_DEBUG(if (StaticTerm) dbgs() << *StaticTerm << "\n\n";
