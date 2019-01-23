@@ -4,6 +4,10 @@
 ; CHECK: br label %left.exit, {{.*}}   ; stage(0), in %left
 ; CHECK: note: foo.c:6:6: in manyterm: Previous terminator is moved to stage(1):
 ; CHECK: br label %right.exit, {{.*}}  ; stage(0), in %right
+; CHECK: warning: foo.c:10:10: in manyterm: Multiple stage(0) terminators of the entry block:
+; CHECK: ret void, {{.*}}             ; stage(1), in %right.exit
+; CHECK: note: foo.c:5:5: in manyterm: Previous terminator is moved to stage(1):
+; CHECK: br label %left.exit, {{.*}}  ; stage(0), in %left
 define void @manyterm(i1 stage(1) %x) stage(1) !dbg !3 {
   br i1 %x, label %left, label %right
 left:
@@ -13,7 +17,7 @@ right:
 left.exit:
   ret void
 right.exit:
-  ret void
+  ret void, !dbg !10
 }
 
 ; CHECK: warning: foo.c:9:9: in manyterm1: Multiple stage(0) terminators of basic block %fork:
@@ -54,3 +58,4 @@ merge:
 !7 = !DILocation(line: 7, column: 7, scope: !4)
 !8 = !DILocation(line: 8, column: 8, scope: !4)
 !9 = !DILocation(line: 9, column: 9, scope: !4)
+!10 = !DILocation(line: 10, column: 10, scope: !3)

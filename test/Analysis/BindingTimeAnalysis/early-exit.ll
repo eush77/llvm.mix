@@ -1,4 +1,4 @@
-; RUN: opt -analyze -bta %s 2>&1 | FileCheck %s --implicit-check-not=stage
+; RUN: opt -analyze -bta %s | FileCheck %s --implicit-check-not=stage
 
 ; CHECK-LABEL: Function Attrs: stage(1)
 ; CHECK-NEXT: define stage(1) i32 @f(i1 stage(1) %p)
@@ -13,9 +13,9 @@ early-exit:                     ; CHECK-NEXT: stage(1)
 
 ; CHECK-LABEL: {{^}}branch:
 branch:                         ; CHECK-NEXT: stage(1)
-  br label %exit                ; CHECK-NEXT: stage(0)
+  br label %exit                ; CHECK-NEXT: stage(1)
 
 ; CHECK-LABEL: {{^}}exit:
-exit:                           ; CHECK-NEXT: stage(0)
+exit:                           ; CHECK-NEXT: stage(1)
   ret i32 0                     ; CHECK-NEXT: stage(1)
 }

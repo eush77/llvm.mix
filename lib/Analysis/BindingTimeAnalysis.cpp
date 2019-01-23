@@ -313,6 +313,8 @@ void BindingTimeAnalysis::initializeWorklist() {
 }
 
 // At each stage, every basic block has to have at most one unique terminator.
+// If basic block includes a return instruction at some stage, it must not
+// have a static terminator at that stage at all.'
 void BindingTimeAnalysis::fixTerminators() {
   for (auto &SourceBB : *F) {
     for (unsigned Stage = getStage(&SourceBB); Stage <= F->getLastStage();
@@ -322,7 +324,7 @@ void BindingTimeAnalysis::fixTerminators() {
       for (auto BBIter = df_begin(&SourceBB); BBIter != df_end(&SourceBB);) {
         const Instruction *T = (*BBIter)->getTerminator();
 
-        if (Stage < getStage(T)) {
+        if (Stage < getStage(T) && !isa<ReturnInst>(T)) {
           ++BBIter;
           continue;
         }
