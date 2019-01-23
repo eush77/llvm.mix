@@ -598,24 +598,37 @@ bool Mix::buildCall(CallInst &Call) const {
     return false;
   }
 
-  Function &Callee = *Call.getCalledFunction();
+  bool ReturnDynFunction = false;
+  Function *Callee = Call.getCalledFunction();
 
-  if (!Callee.isStaged() || Callee.getLastStage() < SourceF->getLastStage())
+  if (Callee->getIntrinsicID() == Intrinsic::mix_call) {
+    ReturnDynFunction = true;
+    Callee = cast<Function>(Call.getArgOperand(0)->stripPointerCasts());
+  } else if (!Callee->isStaged() ||
+             Callee->getLastStage() < SourceF->getLastStage()) {
     return false;
+  }
 
-  StagedFunctionInfo CalleeInfo = FunctionMap.lookup(&Callee);
+  StagedFunctionInfo CalleeInfo = FunctionMap.lookup(Callee);
   assert(CalleeInfo.Mix && "Callee not found in the function map");
   SmallVector<Value *, 4> StaticArgs{MC->getTablePointer()};
   SmallVector<Value *, 4> DynamicArgs;
 
-  // Split arguments by binding time.
-  for (unsigned ArgNo = 0; ArgNo < Call.getNumArgOperands(); ++ArgNo) {
-    Value *Arg = Call.getArgOperand(ArgNo);
+  if (ReturnDynFunction) {
+    // All arguments are static.
+    std::transform(std::next(Call.arg_begin()), Call.arg_end(),
+                   std::back_inserter(StaticArgs),
+                   [&](Value *V) { return SB->defineStatic(V); });
+  } else {
+    // Split arguments by binding time.
+    for (unsigned ArgNo = 0; ArgNo < Call.getNumArgOperands(); ++ArgNo) {
+      Value *Arg = Call.getArgOperand(ArgNo);
 
-    if (Callee.getParamStage(ArgNo) < SourceF->getLastStage()) {
-      StaticArgs.push_back(SB->defineStatic(Arg));
-    } else {
-      DynamicArgs.push_back(Arg);
+      if (Callee->getParamStage(ArgNo) < SourceF->getLastStage()) {
+        StaticArgs.push_back(SB->defineStatic(Arg));
+      } else {
+        DynamicArgs.push_back(Arg);
+      }
     }
   }
 
@@ -623,23 +636,29 @@ bool Mix::buildCall(CallInst &Call) const {
   auto *S = B->CreateCall(CalleeInfo.Mix, StaticArgs, Call.getName());
   SB->positionBuilderAtEnd(SB->getBasicBlock());
 
-  Instruction *StaticV, *DynCallee;
+  Instruction *StaticV{}, *DynamicV;
 
-  if (Callee.getReturnStage() < SourceF->getLastStage()) {
-    StaticV = cast<Instruction>(
-        B->CreateExtractValue(S, 0, Call.getName()));
-    DynCallee =
+  if (Callee->getReturnStage() < SourceF->getLastStage()) {
+    if (!ReturnDynFunction)
+      StaticV = cast<Instruction>(B->CreateExtractValue(S, 0, Call.getName()));
+
+    DynamicV =
         cast<Instruction>(B->CreateExtractValue(S, 1, Call.getName() + ".res"));
   } else {
     StaticV = nullptr;
-    DynCallee = S;
+    DynamicV = S;
   }
 
-  // Build a dynamic call.
-  auto *DynamicV = SB->stage(std::unique_ptr<Instruction, ValueDeleter>(
-      CallInst::Create(ConstantPointerNull::get(CalleeInfo.FTy->getPointerTo()),
-                       DynamicArgs, Call.getName())));
-  SB->setCalledValue(DynamicV, DynCallee);
+  if (!ReturnDynFunction) {
+    // Build a dynamic call.
+    Instruction *C =
+        SB->stage(std::unique_ptr<Instruction, ValueDeleter>(CallInst::Create(
+            ConstantPointerNull::get(CalleeInfo.FTy->getPointerTo()),
+            DynamicArgs, Call.getName())));
+
+    SB->setCalledValue(C, DynamicV);
+    DynamicV = C;
+  }
 
   // Set staged value for the call.
   if (StaticV) {
