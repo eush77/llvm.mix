@@ -135,7 +135,16 @@ bool BindingTimeAnalysis::updateStage(const Value *V, unsigned Stage) {
 void BindingTimeAnalysis::verifyUse(const Use &U, unsigned IncomingStage) {
   LLVMContext &Ctx = U->getContext();
 
-  if (auto *C = dyn_cast<CallInst>(U.getUser())) {
+  if (auto *I = dyn_cast<IntrinsicInst>(U.getUser())) {
+    if (I->getIntrinsicID() == Intrinsic::mix_call && IncomingStage != 0) {
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Note, *F, "Given the argument %s of %s", U, IncomingStage));
+      Ctx.diagnose(DiagnosticInfoBindingTime(
+          DS_Error, *F,
+          "Inferred argument stage is invalid for the call to llvm.mix.call",
+          I));
+    }
+  } else if (auto *C = dyn_cast<CallInst>(U.getUser())) {
     Function *Callee = C->getCalledFunction();
 
     if (!Callee || !Callee->isStaged() ||
