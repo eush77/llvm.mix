@@ -112,9 +112,9 @@ private:
   Function *SourceF = nullptr;
 };
 
-char Mix::ID;
-
 } // namespace
+
+char Mix::ID;
 
 INITIALIZE_PASS_BEGIN(Mix, "mix", "Multi-Stage Compilation", false, false)
 INITIALIZE_PASS_DEPENDENCY(BindingTimeAnalysis)
@@ -251,9 +251,49 @@ Value *Mix::visitMixIntrinsicInst(IntrinsicInst &I) {
 
 namespace {
 
-// Set function and return attributes of a mix function from attributes of
-// a function being staged
-void setMixFunctionAttributes(Function &F, const Function &SourceF) {
+struct Params {
+  SmallVector<Type *, 4> Types;
+  SmallVector<StringRef, 4> Names;
+  SmallVector<AttributeSet, 4> Attrs;
+
+  template <typename StagePredicate>
+  Params(const Function &F, StagePredicate Pred, unsigned NumFrontReserved = 0);
+
+  // Set names and attributes of function arguments from this object
+  void applyTo(Function &F) const;
+};
+
+} // namespace
+
+template <typename StagePredicate>
+Params::Params(const Function &F, StagePredicate Pred,
+               unsigned NumFrontReserved)
+    : Types(NumFrontReserved), Names(NumFrontReserved),
+      Attrs(NumFrontReserved) {
+  AttributeList FA = F.getAttributes();
+
+  for (const Argument &A : F.args()) {
+    if (F.isStaged() && !Pred(A.getStage()))
+      continue;
+
+    Types.push_back(A.getType());
+    Names.push_back(A.getName());
+    Attrs.push_back(FA.getParamAttributes(A.getArgNo()));
+  }
+}
+
+void Params::applyTo(Function &F) const {
+  assert(F.arg_size() == Types.size() && "Argument count mismatch");
+
+  for (unsigned Num = 0; Num != F.arg_size(); ++Num) {
+    F.arg_begin()[Num].setName(Names[Num]);
+    F.addParamAttrs(Num, Attrs[Num]);
+  }
+}
+
+// Set function and return attributes of a mix function from attributes of a
+// function being staged
+static void setMixFunctionAttributes(Function &F, const Function &SourceF) {
   assert(SourceF.isStaged() && "Not a staged function");
 
   AttributeList AL = SourceF.getAttributes();
@@ -269,49 +309,6 @@ void setMixFunctionAttributes(Function &F, const Function &SourceF) {
   F.addAttributes(AttributeList::ReturnIndex,
                   SetStage(AL.getAttributes(AttributeList::ReturnIndex)));
 }
-
-template <typename TypeOutputIt, typename NameOutputIt, typename AttrOutputIt,
-          typename StagePredicate>
-void getParamsByStage(const Function &F, TypeOutputIt OutType,
-                      NameOutputIt OutName, AttrOutputIt OutAttr,
-                      StagePredicate Pred) {
-  AttributeList FA = F.getAttributes();
-
-  for (const Argument &A : F.args()) {
-    if (F.isStaged() && !Pred(A.getStage()))
-      continue;
-
-    *OutType++ = A.getType();
-    *OutName++ = A.getName();
-    *OutAttr++ = FA.getParamAttributes(A.getArgNo());
-  }
-}
-
-struct Params {
-  SmallVector<Type *, 4> Types;
-  SmallVector<StringRef, 4> Names;
-  SmallVector<AttributeSet, 4> Attrs;
-
-  template <typename StagePredicate>
-  Params(const Function &F, StagePredicate Pred, unsigned NumFrontReserved = 0)
-      : Types(NumFrontReserved), Names(NumFrontReserved),
-        Attrs(NumFrontReserved) {
-    getParamsByStage(F, std::back_inserter(Types), std::back_inserter(Names),
-                     std::back_inserter(Attrs), Pred);
-  }
-
-  // Set names and attributes of function arguments from this object.
-  void applyTo(Function &F) const {
-    assert(F.arg_size() == Types.size() && "Argument count mismatch");
-
-    for (unsigned Num = 0; Num != F.arg_size(); ++Num) {
-      F.arg_begin()[Num].setName(Names[Num]);
-      F.addParamAttrs(Num, Attrs[Num]);
-    }
-  }
-};
-
-} // namespace
 
 // Move all last-stage arguments to the next stage and return a function of
 // all the other arguments and MixContext table pointer.
@@ -436,8 +433,6 @@ void Mix::buildFunction(Function &SourceF, const StagedFunctionInfo &SFI,
   B->CreateBr(Entry);
 }
 
-namespace {
-
 // Traverse dynamic blocks in the CFG starting from a given block and
 // following dynamic control flow edges dynamic terminators.
 //
@@ -445,8 +440,8 @@ namespace {
 // optionally the block with a static terminator (there must be at most one).
 // Returns the static terminator if found.
 template <typename OutputIt>
-Instruction *traverseDynamicBlocks(BasicBlock &Start, OutputIt Out,
-                                   const BindingTimeAnalysis &BTA) {
+static Instruction *traverseDynamicBlocks(BasicBlock &Start, OutputIt Out,
+                                          const BindingTimeAnalysis &BTA) {
   // The block with a static terminator reachable by dynamic edges from the
   // starting block.
   BasicBlock *Term = nullptr;
@@ -477,8 +472,6 @@ Instruction *traverseDynamicBlocks(BasicBlock &Start, OutputIt Out,
   Out++ = Term;
   return Term->getTerminator();
 }
-
-} // namespace
 
 void Mix::buildBasicBlock(BasicBlock &SourceBB) const {
   LLVM_DEBUG(dbgs() << "Building static basic block ";
