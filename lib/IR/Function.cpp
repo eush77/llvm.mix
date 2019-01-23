@@ -951,6 +951,7 @@ bool Intrinsic::isLeaf(ID id) {
   case Intrinsic::experimental_gc_statepoint:
   case Intrinsic::experimental_patchpoint_void:
   case Intrinsic::experimental_patchpoint_i64:
+  case Intrinsic::mix_call:
     return false;
   }
 }
