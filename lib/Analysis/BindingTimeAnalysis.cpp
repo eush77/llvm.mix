@@ -286,7 +286,9 @@ void BindingTimeAnalysis::initializeWorklist() {
       } else if (auto *Call = dyn_cast<CallInst>(&I)) {
         Function *Callee = Call->getCalledFunction();
 
-        if (getObjectStageAnnotation(Call)) {
+        if (Callee && Callee->getIntrinsicID() == Intrinsic::mix_call) {
+          enqueue(&I, 1, WorklistItem::Default);
+        } else if (getObjectStageAnnotation(Call)) {
           enqueue(&I, 0, WorklistItem::Default);
         } else if (Callee && Callee->isStaged() &&
                    !Callee->getReturnType()->isVoidTy()) {
