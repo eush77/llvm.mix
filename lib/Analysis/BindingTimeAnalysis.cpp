@@ -323,6 +323,22 @@ void BindingTimeAnalysis::initializeWorklist() {
   }
 }
 
+// True if terminators can be safely merged.
+//
+// This checks that the successor block does not have any phi nodes -
+// otherwise we would not be able to represent this phi when Mix merges all
+// identical static terminators into a single static block.
+static bool canMergeStaticTerminators(const Instruction *T0,
+                                      const Instruction *T1) {
+  if (T0 == T1)
+    return true;
+
+  return T0->isIdenticalTo(T1) &&
+         std::none_of(succ_begin(T0), succ_end(T0), [](const BasicBlock *B) {
+           return isa<PHINode>(B->front());
+         });
+}
+
 // At each stage, every basic block has to have at most one unique terminator.
 // If basic block includes a return instruction at some stage, it must not
 // have a static terminator at that stage at all.'
@@ -347,7 +363,7 @@ void BindingTimeAnalysis::fixTerminators() {
           continue;
         }
 
-        if (Term->isIdenticalTo(T))
+        if (canMergeStaticTerminators(Term, T))
           continue;
 
         // Favor lower-stage terminators.
