@@ -13440,6 +13440,42 @@ the values of vararg parameters of the intrinsic. The return value is a
 pointer to a ``Function`` object representing the IR of a staged function. The
 function is created in a new module owned by the given ``%context``.
 
+'``llvm.mix.call``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare i8* @llvm.mix.call(i8* %function, ...)
+
+Overview:
+"""""""""
+
+This intrinsic performs a static call during multi-stage compilation. Given a
+function in the source program and static values of the arguments for the
+first stage, it constructs the IR function specialized to those arguments.
+
+This intrinsic can only be used in :ref:`staged <_func_stage>` functions.
+
+Arguments:
+""""""""""
+
+The argument ``%function`` is a function identifier bitcasted to ``i8*``. The
+function must be staged and defined in the current translation unit.
+
+The rest are arguments for :ref:`stage(0) <_stage>` parameters of
+``%function``.
+
+Semantics:
+""""""""""
+
+The intrinsic specializes the function referenced by ``%function`` argument to
+the values of vararg parameters of the intrinsic. The return value is a
+pointer to a ``Function`` object representing the IR of a staged function and
+created in the module for the currently compiling stage.
+
 .. _int_trampoline:
 
 Trampoline Intrinsics

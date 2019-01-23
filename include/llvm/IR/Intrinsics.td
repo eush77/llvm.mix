@@ -692,6 +692,10 @@ def int_mix
     : Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_ptr_ty, llvm_vararg_ty],
                 [IntrArgMemOnly]>;
 
+def int_mix_call
+    : Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_vararg_ty],
+                [IntrArgMemOnly]>;
+
 //===---------------- Generic Variable Attribute Intrinsics----------------===//
 //
 def int_var_annotation : Intrinsic<[],
