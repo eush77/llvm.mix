@@ -1241,6 +1241,76 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     break;
   }
 
+  case Builtin::BI__builtin_mix_call: {
+    if (TheCall->getNumArgs() == 0) {
+      Diag(TheCall->getEndLoc(),
+           diag::err_typecheck_call_too_few_args_at_least_one)
+          << 0 << FDecl->getParamDecl(0) << TheCall->getSourceRange();
+      return ExprError();
+    }
+
+    Expr *CalleeExpr = TheCall->getArg(0);
+    auto *CalleeRef = dyn_cast<DeclRefExpr>(CalleeExpr->IgnoreParenCasts());
+
+    if (!CalleeRef) {
+      Diag(CalleeExpr->getBeginLoc(), diag::err_mix_arg_function) << 1 << 0;
+      return ExprError();
+    }
+
+    auto *CalleeDecl = dyn_cast<FunctionDecl>(CalleeRef->getDecl());
+
+    if (!CalleeDecl) {
+      Diag(CalleeExpr->getBeginLoc(), diag::err_mix_arg_function)
+          << 1 << 1 << CalleeRef->getNameInfo().getName();
+      return ExprError();
+    }
+
+    if (!CalleeDecl->hasBody()) {
+      Diag(CalleeExpr->getBeginLoc(), diag::err_mix_arg_function)
+          << 1 << 2 << CalleeRef->getNameInfo().getName();
+      return ExprError();
+    }
+
+    if (!CalleeDecl->hasAttr<StageAttr>() ||
+        !CalleeDecl->getAttr<StageAttr>()->getFunctionStage()) {
+      Diag(CalleeExpr->getBeginLoc(), diag::err_mix_arg_function)
+          << 1 << 3 << CalleeRef->getNameInfo().getName();
+      return ExprError();
+    }
+
+    SmallVector<ParmVarDecl *, 4> Stage0Params;
+    std::copy_if(CalleeDecl->param_begin(), CalleeDecl->param_end(),
+                 std::back_inserter(Stage0Params), [](ParmVarDecl *PVD) {
+                   return !PVD->hasAttr<StageAttr>() ||
+                          !PVD->getAttr<StageAttr>()->getStage();
+                 });
+
+    if ((!CalleeDecl->isVariadic() &&
+         TheCall->getNumArgs() != 1 + Stage0Params.size()) ||
+        (CalleeDecl->isVariadic() &&
+         TheCall->getNumArgs() < 1 + Stage0Params.size())) {
+      Diag(TheCall->getEndLoc(), diag::err_mix_argument_count)
+          << 1 << static_cast<unsigned>(1 + Stage0Params.size())
+          << CalleeDecl->isVariadic();
+      return ExprError();
+    }
+
+    auto M = std::mismatch(Stage0Params.begin(), Stage0Params.end(),
+                           std::next(TheCall->arg_begin()),
+                           [](ParmVarDecl *Left, Expr *Right) {
+                             return Left->getType() == Right->getType();
+                           });
+
+    if (M.first != Stage0Params.end()) {
+      Diag((*M.second)->getSourceRange().getBegin(),
+           diag::err_mix_argument_type)
+          << (*M.first)->getType() << CalleeDecl->getName();
+      return ExprError();
+    }
+
+    break;
+  }
+
   // check secure string manipulation functions where overflows
   // are detectable at compile time
   case Builtin::BI__builtin___memcpy_chk:

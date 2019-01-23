@@ -1295,23 +1295,23 @@ static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
 
   if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     if (!(FD = dyn_cast<FunctionDecl>(DRE->getDecl()))) {
-      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
-          << 1 << DRE->getNameInfo().getName();
+      S.Diag(E->getExprLoc(), diag::err_mix_arg_function)
+          << 0 << 1 << DRE->getNameInfo().getName();
       return;
     }
     if (!FD->hasBody()) {
-      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
-          << 2 << DRE->getNameInfo().getName();
+      S.Diag(E->getExprLoc(), diag::err_mix_arg_function)
+          << 0 << 2 << DRE->getNameInfo().getName();
       return;
     }
     if (!FD->hasAttr<StageAttr>() ||
         !FD->getAttr<StageAttr>()->getFunctionStage()) {
-      S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function)
-          << 3 << DRE->getNameInfo().getName();
+      S.Diag(E->getExprLoc(), diag::err_mix_arg_function)
+          << 0 << 3 << DRE->getNameInfo().getName();
       return;
     }
   } else {
-    S.Diag(E->getExprLoc(), diag::err_attribute_mix_arg_function) << 0;
+    S.Diag(E->getExprLoc(), diag::err_mix_arg_function) << 0 << 0;
     return;
   }
 
@@ -1330,9 +1330,9 @@ static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
 
   if ((!FD->isVariadic() && D->param_size() != 1 + Stage0Params.size()) ||
       (FD->isVariadic() && D->param_size() < 1 + Stage0Params.size())) {
-    S.Diag(D->getSourceRange().getBegin(),
-           diag::err_attribute_mix_argument_count)
-        << static_cast<unsigned>(1 + Stage0Params.size()) << FD->isVariadic();
+    S.Diag(D->getSourceRange().getBegin(), diag::err_mix_argument_count)
+        << 0 << static_cast<unsigned>(1 + Stage0Params.size())
+        << FD->isVariadic();
     return;
   }
 
@@ -1349,7 +1349,7 @@ static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
 
   if (M.first != Stage0Params.end()) {
     S.Diag((*M.second)->getSourceRange().getBegin(),
-           diag::err_attribute_mix_argument_type)
+           diag::err_mix_argument_type)
         << (*M.first)->getType() << FD->getName();
     return;
   }

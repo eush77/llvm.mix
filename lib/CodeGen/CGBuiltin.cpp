@@ -3307,6 +3307,17 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   case Builtin::BI__builtin_coro_param:
     return EmitCoroutineIntrinsic(E, Intrinsic::coro_param);
 
+  case Builtin::BI__builtin_mix_call: {
+    SmallVector<Value*, 4> Args;
+
+    for (const Expr *A : E->arguments()) {
+      Args.push_back(EmitScalarExpr(A));
+    }
+
+    return RValue::get(
+        Builder.CreateCall(CGM.getIntrinsic(Intrinsic::mix_call), Args));
+  }
+
   // OpenCL v2.0 s6.13.16.2, Built-in pipe read and write functions
   case Builtin::BIread_pipe:
   case Builtin::BIwrite_pipe: {
