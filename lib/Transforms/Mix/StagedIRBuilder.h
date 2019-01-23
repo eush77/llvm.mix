@@ -457,7 +457,10 @@ void detail::StagedInstructionBuilder<IRBuilder>::visitGetElementPtrInst(
 
   if (I.isInBounds() && I.getNumIndices() == 2 && I.hasAllConstantIndices() &&
       cast<ConstantInt>(I.idx_begin())->isZero()) {
-    pushArg(getUnsignedIntTy(B.getContext()), *std::next(I.idx_begin()));
+    pushArg(
+        getUnsignedIntTy(B.getContext()),
+        ConstantExpr::getIntegerCast(cast<Constant>(*std::next(I.idx_begin())),
+                                     getUnsignedIntTy(B.getContext()), true));
     pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
     setBuilderName("StructGEP");
     return;

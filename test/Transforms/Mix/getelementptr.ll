@@ -30,6 +30,15 @@ define stage(1) i32* @structgep({ i32, i32 }* stage(1) %x) stage(1) {
   ret i32* %t
 }
 
+; STAGE0-LABEL: @structgep.i64.mix
+; STAGE1-LABEL: @structgep.i64
+define stage(1) i32* @structgep.i64([2 x i32]* stage(1) %x) stage(1) {
+  ; STAGE0: @LLVMBuildStructGEP
+  ; STAGE1: getelementptr inbounds [2 x i32], [2 x i32]* %x, i32 0, i32 0
+  %t = getelementptr inbounds [2 x i32], [2 x i32]* %x, i64 0, i64 0
+  ret i32* %t
+}
+
 define void @main() {
   %c = call i8* @LLVMContextCreate()
   %gep = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32* ([4 x i32]*, i32, i32)* @gep to i8*), i8* %c)
@@ -38,6 +47,8 @@ define void @main() {
   call void @LLVMDumpValue(i8* %inboundsgep)
   %structgep = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32* ({ i32, i32 }*)* @structgep to i8*), i8* %c)
   call void @LLVMDumpValue(i8* %structgep)
+  %structgep.i64 = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32* ([2 x i32]*)* @structgep.i64 to i8*), i8* %c)
+  call void @LLVMDumpValue(i8* %structgep.i64)
   call void @LLVMContextDispose(i8* %c)
   ret void
 }
