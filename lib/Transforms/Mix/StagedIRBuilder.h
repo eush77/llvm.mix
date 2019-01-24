@@ -628,8 +628,7 @@ Instruction *StagedIRBuilder<IRBuilder>::stageMDNode(MDNode *MDN) {
                                B.getInt32(MDN->getNumOperands()));
 
   for (unsigned OpNum = 0; OpNum < MDN->getNumOperands(); ++OpNum) {
-    B.CreateStore(stage(MetadataAsValue::get(B.getContext(),
-                                             MDN->getOperand(OpNum).get())),
+    B.CreateStore(stageMetadata(MDN->getOperand(OpNum).get()),
                   B.CreateGEP(Vals, B.getInt32(OpNum)));
   }
 
@@ -972,7 +971,12 @@ void StagedIRBuilder<IRBuilder>::setStagedValue(Value *V,
   }
   StageCallbacks.erase(V);
 
-  StagedValues[V] = StagedV;
+  // The same MetadataAsValue can be used in a set of basic blocks in which no
+  // single block dominates the rest, so reusing its staged value is not safe
+  // because it can lead to the "Instruction does not dominate all uses"
+  // Verifier error.
+  if (!isa<MetadataAsValue>(V))
+    StagedValues[V] = StagedV;
 }
 
 template <typename IRBuilder>

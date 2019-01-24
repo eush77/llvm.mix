@@ -3,6 +3,8 @@
 ; RUN: | FileCheck %s --check-prefix=STAGE1
 ; RUN: opt -S -mix %s | lli -force-interpreter | opt -verify -disable-output
 
+; STAGE0-LABEL: define {{.*}} @f.mix
+; STAGE1-LABEL: define {{.*}} @f
 define void @f(i32 %n, i32 stage(1) %x) stage(1) {
   ; STAGE0: %m = add i32 %n, 1, !name !0, !void !1
   %m = add i32 %n, 1, !name !0, !void !1
@@ -17,7 +19,30 @@ define void @f(i32 %n, i32 stage(1) %x) stage(1) {
   ; STAGE0: @LLVMMetadataAsValue
   ; STAGE1: %a = call {{.*}} metadata i32 8
   %a = call {i8*, i1} @llvm.type.checked.load(i8* null, i32 %y, metadata i32 8)
+  call void @non_domination(i32 %n, i32 %x)
   ret void
+}
+
+; Check that staged metadata defined in a non-dominator do not get reused
+;
+; STAGE0-LABEL: define {{.*}} @non_domination.mix
+; STAGE1-LABEL: define {{.*}} @non_domination
+define void @non_domination(i32 %n, i32 stage(1) %x) stage(1) {
+  %b = icmp eq i32 %n, 1
+  br i1 %b, label %left, label %right
+  ; STAGE1: ret void, !meta !2
+
+; STAGE0: {{^}}right:
+right:
+  ; STAGE0: call %struct.LLVMOpaqueValue* @LLVMMDStringInContext
+  ; STAGE0: call void @LLVMSetMetadata
+  ret void, !meta !0
+
+; STAGE0: {{^}}left:
+left:
+  ; STAGE0: call %struct.LLVMOpaqueValue* @LLVMMDStringInContext
+  ; STAGE0: call void @LLVMSetMetadata
+  ret void, !meta !0
 }
 
 !0 = !{!"m"}                    ; STAGE0: !0 = !{!"m"}
