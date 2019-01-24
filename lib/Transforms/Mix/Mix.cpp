@@ -52,6 +52,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Mix.h"
 
@@ -126,8 +127,14 @@ INITIALIZE_PASS_END(Mix, "mix", "Multi-Stage Compilation", false, false)
 
 void llvm::addMixPass(PassManagerBuilder &PMB) {
   for (auto EP : {PassManagerBuilder::EP_EnabledOnOptLevel0,
-                    PassManagerBuilder::EP_OptimizerLast})
-    PMB.addExtension(EP, [](const auto &, auto &PM) { PM.add(new Mix); });
+                  PassManagerBuilder::EP_OptimizerLast})
+    PMB.addExtension(EP, [](const auto &, auto &PM) {
+      PM.add(new Mix);
+
+      // Eliminate internal functions no longer used, esp. functions with
+      // calls to llvm.mix.call as those won't be able to code-generate.
+      PM.add(createGlobalDCEPass());
+    });
 }
 
 bool Mix::runOnModule(Module &M) {

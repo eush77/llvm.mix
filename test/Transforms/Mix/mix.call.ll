@@ -1,9 +1,15 @@
-; RUN: opt -S -mix %s | FileCheck %s --check-prefix=STAGE0
+; RUN: opt -S -mix -globaldce %s \
+; RUN: | FileCheck %s --check-prefix=STAGE0 --implicit-check-not=define
 ; RUN: opt -S -mix %s | lli -force-interpreter 2>&1 \
 ; RUN: | FileCheck %s --check-prefix=STAGE1
 ; RUN: opt -S -mix %s | lli -force-interpreter | opt -verify -disable-output
 
-define stage(1) i32 @g(i32 %x, i1 stage(1) %b) stage(1) {
+; @g must be removed after Mix because it cannot be code-generated due to the
+; use of llvm.mix.call
+
+; STAGE0-LABEL: define {{.*}} @g.main
+; STAGE0-LABEL: define {{.*}} @g.mix
+define internal stage(1) i32 @g(i32 %x, i1 stage(1) %b) stage(1) {
   br i1 %b, label %left, label %right
 
 left:
@@ -28,6 +34,8 @@ exit:
   ret i32 %y
 }
 
+; STAGE0-LABEL: define {{.*}} @f
+; STAGE0-LABEL: define {{.*}} @f.mix
 ; STAGE1: define internal i32 [[f_left]]
 ; STAGE1-NEXT: ret i32 4
 ; STAGE1: define internal i32 [[f_right]]
@@ -36,6 +44,7 @@ define i32 @f(i32 %x) stage(1) {
   ret i32 %x
 }
 
+; STAGE0-LABEL: define {{.*}} @main
 define void @main() {
   %c = call i8* @LLVMContextCreate()
   %g = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32 (i32, i1)* @g to i8*), i8* %c, i32 4)
