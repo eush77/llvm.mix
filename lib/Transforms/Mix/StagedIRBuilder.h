@@ -983,6 +983,9 @@ void StagedIRBuilder<IRBuilder>::setStagedValue(Value *V,
 template <typename IRBuilder>
 void StagedIRBuilder<IRBuilder>::whenStaged(
     Value *V, std::function<void(Instruction *)> Callback) {
+  if (isa<Constant>(V))
+    return Callback(stage(V));
+
   if (Instruction *StagedV = StagedValues.lookup(V)) {
     Callback(StagedV);
   } else {
