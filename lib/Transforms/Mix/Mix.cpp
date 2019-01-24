@@ -668,24 +668,22 @@ bool Mix::buildCall(CallInst &Call) const {
 
     DynamicV =
         cast<Instruction>(B->CreateExtractValue(S, 1, Call.getName() + ".res"));
-
-    if (ReturnDynFunction) {
-      Instruction *C =
-          SB->stage(std::unique_ptr<Instruction, ValueDeleter>(CastInst::Create(
-              Instruction::BitCast,
-              ConstantPointerNull::get(CalleeInfo.FTy->getPointerTo()),
-              B->getInt8PtrTy(), Call.getName() + ".res.ptr")));
-
-      SB->setCastedValue(C, DynamicV);
-      SB->setStagedValue(&Call, C);
-      return true;
-    }
   } else {
     StaticV = nullptr;
     DynamicV = S;
   }
 
-  assert(!ReturnDynFunction);
+  if (ReturnDynFunction) {
+    Instruction *C =
+        SB->stage(std::unique_ptr<Instruction, ValueDeleter>(CastInst::Create(
+            Instruction::BitCast,
+            ConstantPointerNull::get(CalleeInfo.FTy->getPointerTo()),
+            B->getInt8PtrTy(), Call.getName() + ".res.ptr")));
+
+    SB->setCastedValue(C, DynamicV);
+    SB->setStagedValue(&Call, C);
+    return true;
+  }
 
   // Build a dynamic call.
   Instruction *C = SB->stage(std::unique_ptr<Instruction, ValueDeleter>(
