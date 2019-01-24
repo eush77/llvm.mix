@@ -118,8 +118,9 @@ public:
   void addIncoming(PHINode *, Value *, BasicBlock *IncomingBB,
                    BasicBlock *StaticIncomingBB, bool Staged);
 
-  // Change target of a dynamic call.
+  // Change operands of dynamic instructions
   void setCalledValue(Instruction *Call, Instruction *V);
+  void setCastedValue(Instruction *Cast, Instruction *V);
 
 private:
   Module &getModule() const { return *B.GetInsertBlock()->getModule(); }
@@ -997,6 +998,16 @@ void StagedIRBuilder<IRBuilder>::setCalledValue(Instruction *I,
          "Not a dynamic call");
 
   Call->setArgOperand(1, V);
+}
+
+template <typename IRBuilder>
+void StagedIRBuilder<IRBuilder>::setCastedValue(Instruction *I,
+                                                Instruction *V) {
+  auto *Call = cast<CallInst>(I);
+  assert(Call->getCalledFunction()->getName() == "LLVMBuildCast" &&
+         "Not a dynamic cast");
+
+  Call->setArgOperand(2, V);
 }
 
 } // namespace mix

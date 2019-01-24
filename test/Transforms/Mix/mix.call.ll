@@ -15,20 +15,20 @@ define internal stage(1) i32 @g(i32 %x, i1 stage(1) %b) stage(1) {
 left:
   ; STAGE0: %p.left = call {{.*}} @f.mix
   %p.left = call i8* (i8*, ...) @llvm.mix.call(i8* bitcast (i32 (i32)* @f to i8*), i32 %x)
-  %f.left = bitcast i8* %p.left to i32 ()*
   br label %exit
 
 right:
   %x1 = add i32 %x, 1
   ; STAGE0: %p.right = call {{.*}} @f.mix
   %p.right = call i8* (i8*, ...) @llvm.mix.call(i8* bitcast (i32 (i32)* @f to i8*), i32 %x1)
-  %f.right = bitcast i8* %p.right to i32 ()*
   br label %exit
 
 ; STAGE1-LABEL: {{^}}exit:
 exit:
-  ; STAGE1-NEXT: phi i32 ()* [ [[f_left:@f.*]], %left ], [ [[f_right:@f.*]], %right ]
-  %f = phi i32 ()* [ %f.left, %left ], [ %f.right, %right ]
+  ; STAGE1-NEXT: phi i8* [ bitcast (i32 ()* [[f_left:@f.*]] to i8*), %left ], [ bitcast (i32 ()* [[f_right:@f.*]] to i8*), %right ]
+  %p = phi i8* [ %p.left, %left ], [ %p.right, %right ]
+  ; STAGE1-NEXT: %f = bitcast i8* %p to i32 ()*
+  %f = bitcast i8* %p to i32 ()*
   ; STAGE1-NEXT: call i32 %f()
   %y = call i32 %f()
   ret i32 %y
