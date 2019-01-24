@@ -114,6 +114,10 @@ public:
     return B.CreateGlobalStringPtr(Name, VarName);
   }
 
+  // Add incoming value for a static phi.
+  void addIncoming(PHINode *, Value *, BasicBlock *IncomingBB,
+                   BasicBlock *StaticIncomingBB, bool Staged);
+
   // Change target of a dynamic call.
   void setCalledValue(Instruction *Call, Instruction *V);
 
@@ -744,45 +748,41 @@ PHINode *StagedIRBuilder<IRBuilder>::defineStatic(PHINode *Phi, bool Staged) {
   Type *Ty = Staged ? getValuePtrTy(B.getContext()) : Phi->getType();
   SPhi = B.CreatePHI(Ty, Phi->getNumIncomingValues(), Phi->getName());
   SPhi->moveBefore(B.GetInsertBlock()->getFirstNonPHI());
-
-  for (unsigned IncomingNum = 0; IncomingNum < Phi->getNumIncomingValues();
-       ++IncomingNum) {
-    Value *IncomingV = Phi->getIncomingValue(IncomingNum);
-    BasicBlock *IncomingBB = Phi->getIncomingBlock(IncomingNum);
-
-    if (auto *IncomingI = dyn_cast<Instruction>(IncomingV)) {
-      whenStaged(IncomingI, [=](Instruction *StagedI) {
-        Value *IncomingV =
-            Staged ? StagedI : this->StaticInstructions.lookup(IncomingI);
-
-        SPhi->addIncoming(IncomingV, defineStatic(IncomingBB));
-      });
-    } else {
-      IncomingBB = defineStatic(IncomingBB);
-
-      // Staged value must be live on the edge from the incoming block.
-      if (Staged) {
-        auto IP = B.saveIP();
-
-        if (auto *Term = IncomingBB->getTerminator()) {
-          B.SetInsertPoint(Term);
-        } else {
-          B.SetInsertPoint(IncomingBB);
-        }
-
-        IncomingV = stage(IncomingV);
-
-        B.restoreIP(IP);
-      } else {
-        IncomingV = defineStatic(IncomingV);
-      }
-
-      SPhi->addIncoming(IncomingV, IncomingBB);
-    }
-  }
-
   StaticInstructions[Phi] = SPhi;
   return SPhi;
+}
+
+template <typename IRBuilder>
+void StagedIRBuilder<IRBuilder>::addIncoming(PHINode *Phi, Value *IncomingV,
+                                             BasicBlock *IncomingBB,
+                                             BasicBlock *StaticIncomingBB,
+                                             bool Staged) {
+  if (auto *IncomingI = dyn_cast<Instruction>(IncomingV)) {
+    whenStaged(IncomingI, [=](Instruction *StagedI) {
+      Value *IncomingV =
+          Staged ? StagedI : this->StaticInstructions.lookup(IncomingI);
+
+      Phi->addIncoming(IncomingV, defineStatic(StaticIncomingBB));
+    });
+    return;
+  }
+
+  if (!Staged) {
+    Phi->addIncoming(defineStatic(IncomingV), defineStatic(StaticIncomingBB));
+    return;
+  }
+
+  typename IRBuilder::InsertPoint IP = B.saveIP();
+
+  // Staged value must be live on the edge from the incoming block, so stage
+  // it at the end of the predecessor block.
+  if (auto *Term = defineStatic(IncomingBB)->getTerminator())
+    B.SetInsertPoint(Term);
+  else
+    B.SetInsertPoint(defineStatic(IncomingBB));
+
+  Phi->addIncoming(stage(IncomingV), defineStatic(StaticIncomingBB));
+  B.restoreIP(IP);
 }
 
 template <typename IRBuilder>

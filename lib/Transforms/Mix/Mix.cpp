@@ -582,9 +582,26 @@ void Mix::buildInstruction(Instruction &I) const {
     return;
   }
 
-  if (auto *Phi = dyn_cast<PHINode>(&I))
-    SB->defineStatic(
-        Phi, BTA->getPhiValueBindingTime(Phi) == SourceF->getLastStage());
+  if (auto *Phi = dyn_cast<PHINode>(&I)) {
+    bool Staged = BTA->getPhiValueBindingTime(Phi) == SourceF->getLastStage();
+    PHINode *SPhi = SB->defineStatic(Phi, Staged);
+
+    for (unsigned IncomingNum = 0; IncomingNum < Phi->getNumIncomingValues();
+         ++IncomingNum) {
+      Value *IncomingV = Phi->getIncomingValue(IncomingNum);
+      BasicBlock *IncomingBB = Phi->getIncomingBlock(IncomingNum);
+
+      for (auto SBB = idf_begin(IncomingBB); SBB != idf_end(IncomingBB);) {
+        if (BTA->getStage(*SBB) == SourceF->getLastStage()) {
+          ++SBB;
+          continue;
+        }
+
+        SB->addIncoming(SPhi, IncomingV, IncomingBB, *SBB, Staged);
+        SBB.skipChildren();
+      }
+    }
+  }
 
   SB->stageStatic(&I);
 }
