@@ -971,11 +971,11 @@ void StagedIRBuilder<IRBuilder>::setStagedValue(Value *V,
   }
   StageCallbacks.erase(V);
 
-  // The same MetadataAsValue can be used in a set of basic blocks in which no
-  // single block dominates the rest, so reusing its staged value is not safe
-  // because it can lead to the "Instruction does not dominate all uses"
-  // Verifier error.
-  if (!isa<MetadataAsValue>(V))
+  // The same Constant or MetadataAsValue can be used in a set of basic blocks
+  // in which no single block dominates the rest, so reusing its staged value
+  // is not safe because it can lead to the "Instruction does not dominate all
+  // uses" Verifier error.
+  if (!isa<Constant>(V) && !isa<MetadataAsValue>(V))
     StagedValues[V] = StagedV;
 }
 
