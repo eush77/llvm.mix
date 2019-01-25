@@ -361,16 +361,17 @@ static void setMixFunctionAttributes(Function &F, const Function &SourceF) {
 
   AttributeList AL = SourceF.getAttributes();
 
-  auto SetStage = [Stage = SourceF.getLastStage() - 1](AttributeSet AS) {
-    return AttrBuilder(AS)
-        .removeAttribute(Attribute::Stage)
-        .addStageAttr(Stage);
-  };
+  auto FA = AttributeSet::get(
+      AL.getContext(),
+      AttrBuilder(AL.getAttributes(AttributeList::FunctionIndex))
+          .removeAttribute(Attribute::Stage)
+          .addStageAttr(SourceF.getLastStage() - 1));
 
-  F.addAttributes(AttributeList::FunctionIndex,
-                  SetStage(AL.getAttributes(AttributeList::FunctionIndex)));
-  F.addAttributes(AttributeList::ReturnIndex,
-                  SetStage(AL.getAttributes(AttributeList::ReturnIndex)));
+  auto RA = AttributeSet::get(
+      AL.getContext(), AttrBuilder().addStageAttr(SourceF.getLastStage() - 1));
+
+  F.addAttributes(AttributeList::FunctionIndex, FA);
+  F.addAttributes(AttributeList::ReturnIndex, RA);
 }
 
 // Move all last-stage arguments to the next stage and return a function of
