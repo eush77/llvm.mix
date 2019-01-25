@@ -470,10 +470,13 @@ unsigned BindingTimeAnalysis::getStage(const Value *V) const {
 }
 
 unsigned BindingTimeAnalysis::getPhiValueBindingTime(const PHINode *Phi) const {
-  return std::accumulate(Phi->op_begin(), Phi->op_end(), 0,
-                         [this](unsigned Stage, const Value *V) {
-                           return std::max(Stage, getStage(V));
-                         });
+  return std::accumulate(
+      Phi->op_begin(), Phi->op_end(), 0,
+      [this](unsigned Stage, const Value *V) {
+        return std::max(Stage, isa<PHINode>(V)
+                                   ? getPhiValueBindingTime(cast<PHINode>(V))
+                                   : getStage(V));
+      });
 }
 
 // Add new item to the worklist, but not if the value has already surpassed
