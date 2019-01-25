@@ -70,10 +70,12 @@ static cl::opt<bool> PrintBTA("print-bta", cl::Hidden,
                               cl::desc("Print binding-time analysis results"));
 
 const IntrinsicInst *llvm::getObjectStageAnnotation(const Value *V) {
-  // Look through inbounds GEP
+  V = V->stripPointerCasts();
+
+  // Look through casts and inbounds GEP
   while (auto *GEP = dyn_cast<GetElementPtrInst>(V)) {
     if (GEP->isInBounds())
-      V = GEP->getPointerOperand();
+      V = GEP->getPointerOperand()->stripPointerCasts();
     else
       break;
   }

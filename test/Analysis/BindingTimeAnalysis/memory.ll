@@ -57,5 +57,15 @@ define i32 @inbounds([2 x i32]* %p) stage(1) {
   ret i32 %x                                         ; CHECK-NEXT: stage(0)
 }
 
+; CHECK-LABEL: define i32 @cast
+define i32 @cast(i8* %p) stage(1) {
+; CHECK-NEXT: stage(0)
+  %p1 = call i8* @llvm.object.stage.p0i8(i8* %p, i32 0) ; CHECK-NEXT: stage(0)
+  %p2 = bitcast i8* %p1 to i32*                         ; CHECK-NEXT: stage(0)
+  %x = load i32, i32* %p2                               ; CHECK-NEXT: stage(0)
+  ret i32 %x                                            ; CHECK-NEXT: stage(0)
+}
+
+declare i8* @llvm.object.stage.p0i8(i8*, i32)
 declare i32* @llvm.object.stage.p0i32(i32*, i32)
 declare [2 x i32]* @llvm.object.stage.p0a2i32([2 x i32]*, i32)
