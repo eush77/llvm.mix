@@ -8,11 +8,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/User.h"
+#include "llvm/ADT/GraphTraits.h"
 #include "llvm/AsmParser/Parser.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Value.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
 using namespace llvm;
@@ -140,6 +144,57 @@ TEST(UserTest, PersonalityUser) {
 
   // No users should remain
   EXPECT_TRUE(TestF->user_empty());
+}
+
+TEST(UserTest, GraphTraits) {
+  LLVMContext C;
+  const char *ModuleString = "define void @f(i32 %x) {\n"
+                             "entry:\n"
+                             "  %0 = icmp eq i32 %x, 1\n"
+                             "  br i1 %0, label %1, label %1\n"
+                             "\n"
+                             "  ret void\n"
+                             "}\n";
+  SMDiagnostic Err;
+  std::unique_ptr<Module> M = parseAssemblyString(ModuleString, Err, C);
+
+  Function *F = M->getFunction("f");
+
+  Value *Arg = F->arg_begin();
+  EXPECT_EQ(std::next(inverse_children<Value *>(Arg).begin()),
+            inverse_children<Value *>(Arg).end());
+
+  auto *ICmp = dyn_cast<Instruction>(*inverse_children<Value *>(Arg).begin());
+  EXPECT_TRUE(ICmp);
+  EXPECT_EQ(ICmp->getOpcode(), Instruction::ICmp);
+  EXPECT_EQ(std::next(children<Value *>(ICmp).begin(), 2),
+            children<Value *>(ICmp).end());
+  EXPECT_EQ(*children<Value *>(ICmp).begin(), Arg);
+  EXPECT_EQ(std::next(inverse_children<Value *>(ICmp).begin()),
+            inverse_children<Value *>(ICmp).end());
+
+  auto *One =
+      dyn_cast<ConstantInt>(*std::next(children<Value *>(ICmp).begin()));
+  EXPECT_TRUE(One);
+  EXPECT_EQ(One->getSExtValue(), 1);
+
+  auto *Br = dyn_cast<BranchInst>(*inverse_children<Value *>(ICmp).begin());
+  EXPECT_TRUE(Br);
+  EXPECT_EQ(std::next(children<Value *>(Br).begin(), 3),
+            children<Value *>(Br).end());
+  EXPECT_EQ(*children<Value *>(Br).begin(), ICmp);
+  EXPECT_EQ(*std::next(children<Value *>(Br).begin()),
+            *std::next(children<Value *>(Br).begin(), 2));
+  EXPECT_EQ(inverse_children<Value *>(Br).begin(),
+            inverse_children<Value *>(Br).end());
+
+  auto *BB = dyn_cast<BasicBlock>(*std::next(children<Value *>(Br).begin()));
+  EXPECT_TRUE(BB);
+  EXPECT_EQ(children<Value *>(BB).begin(), children<Value *>(BB).end());
+  EXPECT_EQ(std::next(inverse_children<Value *>(BB).begin(), 2),
+            inverse_children<Value *>(BB).end());
+  EXPECT_EQ(*inverse_children<Value *>(BB).begin(), Br);
+  EXPECT_EQ(*std::next(inverse_children<Value *>(BB).begin()), Br);
 }
 
 } // end anonymous namespace

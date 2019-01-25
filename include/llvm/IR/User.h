@@ -19,6 +19,7 @@
 #ifndef LLVM_IR_USER_H
 #define LLVM_IR_USER_H
 
+#include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/Use.h"
@@ -328,6 +329,70 @@ template<> struct simplify_type<User::const_op_iterator> {
   static SimpleType getSimplifiedValue(User::const_op_iterator &Val) {
     return Val->get();
   }
+};
+
+//===--------------------------------------------------------------------===//
+// GraphTraits specializations for def-use graphs
+//===--------------------------------------------------------------------===//
+
+template <> struct GraphTraits<Value *> {
+  using NodeRef = Value *;
+  using ChildIteratorType = User::op_iterator;
+
+  static NodeRef getEntryNode(Value *V) { return V; }
+
+  static ChildIteratorType child_begin(NodeRef N) {
+    if (auto *U = dyn_cast<User>(N))
+      return U->op_begin();
+    else
+      return {};
+  }
+
+  static ChildIteratorType child_end(NodeRef N) {
+    if (auto *U = dyn_cast<User>(N))
+      return U->op_end();
+    else
+      return {};
+  }
+};
+
+template <> struct GraphTraits<const Value *> {
+  using NodeRef = const Value *;
+  using ChildIteratorType = User::const_op_iterator;
+
+  static NodeRef getEntryNode(const Value *V) { return V; }
+
+  static ChildIteratorType child_begin(NodeRef N) {
+    if (auto *U = dyn_cast<User>(N))
+      return U->op_begin();
+    else
+      return {};
+  }
+
+  static ChildIteratorType child_end(NodeRef N) {
+    if (auto *U = dyn_cast<User>(N))
+      return U->op_end();
+    else
+      return {};
+  }
+};
+
+template <> struct GraphTraits<Inverse<Value *>> {
+  using NodeRef = Value *;
+  using ChildIteratorType = Value::user_iterator;
+
+  static NodeRef getEntryNode(Inverse<Value *> G) { return G.Graph; }
+  static ChildIteratorType child_begin(NodeRef N) { return N->user_begin(); }
+  static ChildIteratorType child_end(NodeRef N) { return N->user_end(); }
+};
+
+template <> struct GraphTraits<Inverse<const Value *>> {
+  using NodeRef = const Value *;
+  using ChildIteratorType = Value::const_user_iterator;
+
+  static NodeRef getEntryNode(Inverse<const Value *> G) { return G.Graph; }
+  static ChildIteratorType child_begin(NodeRef N) { return N->user_begin(); }
+  static ChildIteratorType child_end(NodeRef N) { return N->user_end(); }
 };
 
 } // end namespace llvm
