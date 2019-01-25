@@ -589,28 +589,32 @@ void Mix::buildInstruction(Instruction &I) const {
     return;
   }
 
-  if (auto *Phi = dyn_cast<PHINode>(&I)) {
-    bool Staged = BTA->getPhiValueBindingTime(Phi) == SourceF->getLastStage();
-    PHINode *SPhi = SB->defineStatic(Phi, Staged);
+  if (!isa<PHINode>(&I)) {
+    SB->stageStatic(&I);
+    return;
+  }
 
-    for (unsigned IncomingNum = 0; IncomingNum < Phi->getNumIncomingValues();
-         ++IncomingNum) {
-      Value *IncomingV = Phi->getIncomingValue(IncomingNum);
-      BasicBlock *IncomingBB = Phi->getIncomingBlock(IncomingNum);
+  auto *Phi = cast<PHINode>(&I);
+  bool Staged = BTA->getPhiValueBindingTime(Phi) == SourceF->getLastStage();
+  PHINode *SPhi = SB->defineStatic(Phi, Staged);
 
-      for (auto SBB = idf_begin(IncomingBB); SBB != idf_end(IncomingBB);) {
-        if (BTA->getStage(*SBB) == SourceF->getLastStage()) {
-          ++SBB;
-          continue;
-        }
+  for (unsigned IncomingNum = 0; IncomingNum < Phi->getNumIncomingValues();
+       ++IncomingNum) {
+    Value *IncomingV = Phi->getIncomingValue(IncomingNum);
+    BasicBlock *IncomingBB = Phi->getIncomingBlock(IncomingNum);
 
-        SB->addIncoming(SPhi, IncomingV, IncomingBB, *SBB, Staged);
-        SBB.skipChildren();
+    for (auto SBB = idf_begin(IncomingBB); SBB != idf_end(IncomingBB);) {
+      if (BTA->getStage(*SBB) == SourceF->getLastStage()) {
+        ++SBB;
+        continue;
       }
+
+      SB->addIncoming(SPhi, IncomingV, IncomingBB, *SBB, Staged);
+      SBB.skipChildren();
     }
   }
 
-  SB->stageStatic(&I);
+  SB->stageStatic(Phi, Staged);
 }
 
 // Build call instruction, returning false if the instruction must be general

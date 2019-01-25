@@ -107,6 +107,7 @@ public:
 
   // Stage a static value as a constant in generated code.
   Instruction *stageStatic(Value *V);
+  Instruction *stageStatic(PHINode *Phi, bool Staged);
 
   // Stage a string by creating a global string variable with a given
   // initializer and returning an `i8*' pointer to the first character.
@@ -811,11 +812,6 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
 
   Value *StaticV = defineStatic(V);
 
-  if (auto *StaticPhi = dyn_cast<PHINode>(StaticV)) {
-    setStagedValue(V, StaticPhi);
-    return StaticPhi;
-  }
-
   if (isa<UndefValue>(StaticV)) {
     StagedV = B.CreateCall(getGetUndefFn(getModule()),
                            {C.getType(StaticV->getType())}, StaticV->getName());
@@ -959,6 +955,24 @@ Instruction *StagedIRBuilder<IRBuilder>::stageStatic(Value *V) {
          "Unsupported static value");
   setStagedValue(V, StagedV);
   return StagedV;
+}
+
+// Stage value of a phi node or just define it in the generated block
+// depending on whether its operands are staged or not.
+template <typename IRBuilder>
+Instruction *StagedIRBuilder<IRBuilder>::stageStatic(PHINode *Phi,
+                                                     bool Staged) {
+  if (!Staged)
+    return stageStatic(Phi);
+
+  Instruction *StagedPhi = StagedValues.lookup(Phi);
+
+  if (StagedPhi)
+    return StagedPhi;
+
+  StagedPhi = cast<PHINode>(defineStatic(Phi));
+  setStagedValue(Phi, StagedPhi);
+  return StagedPhi;
 }
 
 template <typename IRBuilder>
