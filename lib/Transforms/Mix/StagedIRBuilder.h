@@ -322,6 +322,7 @@ public:
   void visitLoadInst(LoadInst &);
   void visitPHINode(PHINode &);
   void visitReturnInst(ReturnInst &);
+  void visitSelectInst(SelectInst &);
   void visitStoreInst(StoreInst &);
   void visitSwitchInst(SwitchInst &);
   void visitUnreachableInst(UnreachableInst &);
@@ -539,6 +540,16 @@ void detail::StagedInstructionBuilder<IRBuilder>::visitReturnInst(
 
   pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getReturnValue()));
   setBuilderName("Ret");
+}
+
+template <typename IRBuilder>
+void detail::StagedInstructionBuilder<IRBuilder>::visitSelectInst(
+    SelectInst &I) {
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getCondition()));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getTrueValue()));
+  pushArg(getValuePtrTy(B.getContext()), SB.stage(I.getFalseValue()));
+  pushArg(getCharPtrTy(B.getContext()), SB.stage(I.getName()));
+  setBuilderName("Select");
 }
 
 template <typename IRBuilder>
