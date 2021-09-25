@@ -3265,6 +3265,10 @@ bool FunctionDecl::isTargetMultiVersion() const {
   return isMultiVersion() && hasAttr<TargetAttr>();
 }
 
+bool FunctionDecl::isMixSpecializerDeclaration() const {
+  return hasAttr<MixAttr>();
+}
+
 void
 FunctionDecl::setPreviousDeclaration(FunctionDecl *PrevDecl) {
   redeclarable_base::setPreviousDecl(PrevDecl);

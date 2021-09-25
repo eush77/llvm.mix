@@ -483,6 +483,32 @@ public:
     return AttributeSets.getParamPreallocatedType(ArgNo);
   }
 
+  /// True if the function is staged.
+  bool isStaged() const {
+    return hasFnAttribute(Attribute::Stage);
+  }
+
+  /// Get last stage - the number of times the function must be partially
+  /// applied before executing.
+  unsigned getLastStage() const {
+    assert(isStaged() && "Function is not staged");
+    return AttributeSets.getStage(AttributeList::FunctionIndex);
+  }
+
+  /// Get stage of the return value.
+  unsigned getReturnStage() const {
+    assert(isStaged() && "Function is not staged");
+    return getReturnType()->isVoidTy()
+               ? getLastStage()
+               : AttributeSets.getStage(AttributeList::ReturnIndex);
+  }
+
+  /// Extract binding-time stage for a parameter.
+  unsigned getParamStage(unsigned ArgNo) const {
+    assert(isStaged() && "Function is not staged");
+    return AttributeSets.getStage(AttributeList::FirstArgIndex + ArgNo);
+  }
+
   /// Extract the number of dereferenceable bytes for a parameter.
   /// @param ArgNo Index of an argument, with 0 being the first function arg.
   uint64_t getParamDereferenceableBytes(unsigned ArgNo) const {

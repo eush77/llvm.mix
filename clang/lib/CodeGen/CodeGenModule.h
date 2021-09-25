@@ -501,6 +501,9 @@ private:
   /// have been emitted.
   llvm::SmallPtrSet<clang::Module *, 16> EmittedModuleInitializers;
 
+  /// Whether we processed a Mix attribute during CodeGen.
+  bool SawMix;
+
   /// A vector of metadata strings for linker options.
   SmallVector<llvm::MDNode *, 16> LinkerOptionsMetadata;
 
@@ -1405,6 +1408,9 @@ public:
   /// Create and attach type metadata to the given function.
   void CreateFunctionTypeMetadataForIcall(const FunctionDecl *FD,
                                           llvm::Function *F);
+
+  /// Returns whether this module contains declaration with a Mix attribute.
+  bool sawMix() const { return SawMix; }
 
   /// Whether this function's return type has no side effects, and thus may
   /// be trivially discarded if it is unused.

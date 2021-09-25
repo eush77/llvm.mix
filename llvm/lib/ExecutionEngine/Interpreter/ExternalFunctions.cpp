@@ -19,6 +19,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Interpreter.h"
+#include "llvm-c/Core.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Config/config.h" // Detect libffi
@@ -38,6 +39,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -494,6 +496,24 @@ static GenericValue lle_X_memcpy(FunctionType *FT,
   GV.IntVal = 0;
   return GV;
 }
+
+#ifdef USE_LIBFFI
+namespace {
+struct ForceLLVMCLinking {
+  ForceLLVMCLinking() {
+    // Reference LLVM-C Core so that it's accessible for Mix tests. As the
+    // compiler isn't smart enough to know that getenv() never returns -1,
+    // this will do the job.
+    //
+    // NOTE: This doesn't reference all functions from Core and so it won't
+    // work with whole-program optimization.
+    if (std::getenv("bar") != (char *)-1)
+      return;
+    LLVMInitializeCore(nullptr);
+  }
+} ForceLLVMCLinking;
+} // namespace
+#endif
 
 void Interpreter::initializeExternalFunctions() {
   sys::ScopedLock Writer(*FunctionsLock);

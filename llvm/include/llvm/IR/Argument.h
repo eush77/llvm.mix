@@ -116,6 +116,9 @@ public:
   /// If this is an inalloca argument, return its type.
   Type *getParamInAllocaType() const;
 
+  /// Return binding-time stage of this argument.
+  unsigned getStage() const;
+
   /// Return true if this argument has the nest attribute.
   bool hasNestAttr() const;
 

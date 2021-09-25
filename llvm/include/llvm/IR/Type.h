@@ -25,6 +25,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iterator>
+#include <string>
 
 namespace llvm {
 
@@ -112,6 +113,10 @@ protected:
   Type * const *ContainedTys = nullptr;
 
 public:
+  /// Return a stable mangling for the current type for use in IR identifiers,
+  /// e.g. intrinsic signatures.
+  std::string getMangledTypeStr();
+
   /// Print the current type.
   /// Omit the type details if \p NoDetails == true.
   /// E.g., let %st = type { i32, i16 }

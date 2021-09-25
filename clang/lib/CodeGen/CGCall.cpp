@@ -2089,6 +2089,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
     if (TargetDecl->hasAttr<ReturnsNonNullAttr>() &&
         !CodeGenOpts.NullPointerIsValid)
       RetAttrs.addAttribute(llvm::Attribute::NonNull);
+    if (auto *SA = TargetDecl->getAttr<StageAttr>()) {
+      if (unsigned Stage = SA->getStage()) {
+        RetAttrs.addStageAttr(Stage);
+      }
+    }
+
     if (TargetDecl->hasAttr<AnyX86NoCallerSavedRegistersAttr>())
       FuncAttrs.addAttribute("no_caller_saved_registers");
     if (TargetDecl->hasAttr<AnyX86NoCfCheckAttr>())
@@ -2103,6 +2109,12 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
         NumElemsParam = AllocSize->getNumElemsParam().getLLVMIndex();
       FuncAttrs.addAllocSizeAttr(AllocSize->getElemSizeParam().getLLVMIndex(),
                                  NumElemsParam);
+    }
+
+    if (auto *SA = TargetDecl->getAttr<StageAttr>()) {
+      if (unsigned Stage = SA->getFunctionStage()) {
+        FuncAttrs.addStageAttr(Stage);
+      }
     }
 
     if (TargetDecl->hasAttr<OpenCLKernelAttr>()) {
@@ -2660,6 +2672,19 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
 
     unsigned FirstIRArg, NumIRArgs;
     std::tie(FirstIRArg, NumIRArgs) = IRFunctionArgs.getIRArgs(ArgNo);
+
+    if (auto *SA = Arg->getAttr<StageAttr>()) {
+      assert(!SA->getFunctionStage() &&
+             "Function stage set on function argument");
+
+      if (unsigned Stage = SA->getStage()) {
+        for (unsigned IRArg = FirstIRArg; IRArg < FirstIRArg + NumIRArgs;
+             ++IRArg) {
+          cast<llvm::Argument>(Fn->getArg(IRArg))
+              ->addAttr(llvm::Attribute::getWithStage(getLLVMContext(), Stage));
+        }
+      }
+    }
 
     switch (ArgI.getKind()) {
     case ABIArgInfo::InAlloca: {

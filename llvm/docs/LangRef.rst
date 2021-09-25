@@ -1320,6 +1320,15 @@ Currently, only the following parameter attributes are defined:
     ``dereferenceable(<n>)``). This attribute may only be applied to
     pointer typed parameters.
 
+.. _stage:
+
+``stage(<n>)``
+    This attribute sets binding-time stage of the parameter of a :ref:`staged
+    function <_func_stage>`. Stage 0 is the current stage and the default.
+    Stage 1 is the next stage (after one compilation). Stage 2 is the stage
+    after that, and so on. When applied to non-void return values, the
+    attribute indicates at which stage the value becomes available.
+
 ``swiftself``
     This indicates that the parameter is the self/context parameter. This is not
     a valid attribute for return values and can only be applied to one
@@ -2039,6 +2048,15 @@ example:
     ``ssp/sspstrong/sspreq`` attribute. If inlined, the caller will get the
     ``sspreq`` attribute.  ``call``, ``invoke``, and ``callbr`` instructions
     with the ``alwaysinline`` attribute force inlining.
+
+.. _func_stage:
+
+``stage``
+    This attribute indicates that the function is to be staged with a
+    :ref:`mixed execution intrinsic <_int_mix>` (directly or indirectly). The
+    value of the attribute is the number of compilations of the function, and
+    it must be either equal to, or one above the maximum stage of the
+    arguments.
 
 ``strictfp``
     This attribute indicates that the function was called from a scope that
@@ -17603,6 +17621,123 @@ Exception Handling Intrinsics
 The LLVM exception handling intrinsics (which all start with
 ``llvm.eh.`` prefix), are described in the `LLVM Exception
 Handling <ExceptionHandling.html#format-common-intrinsics>`_ document.
+
+.. _int_mix:
+
+Mixed Execution Intrinsics
+--------------------------
+
+These intrinsics provide access to the Mix runtime for run-time function
+specialization.
+
+'``llvm.object.stage``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+This is an overloaded intrinsic. You can use ``llvm.object.stage`` on any
+pointer.
+
+::
+
+      declare i32* @llvm.object.stage.p0i32(i32* %object, i32 %stage)
+
+Overview:
+"""""""""
+
+This intrinsic sets binding-time stage of the referenced object.
+
+Arguments:
+""""""""""
+
+The argument ``%object`` is a pointer to an arbitrary object.
+
+The argument ``%stage`` must be a non-negative constant and is a stage number.
+
+Semantics:
+""""""""""
+
+This intrinsic annotates the object pointer with the binding-time stage. It is
+only used to aid binding-time analysis and does not (directly) affect code
+generation. It returns the value of the first argument.
+
+'``llvm.mix``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare i8* @llvm.mix(i8* %function, i8* %context, ...)
+
+Overview:
+"""""""""
+
+This intrinsic performs the first stage of multi-stage compilation. Given a
+function in the source program and (dynamic) values of the arguments for the
+first stage, it constructs the IR of the staged function that is the result of
+the first stage.
+
+The expansion of this intrinsic is in fact the specializer for the function,
+generated during the initial build based on the code of the function being
+specialized.
+
+Arguments:
+""""""""""
+
+The argument ``%function`` is a function identifier bitcasted to ``i8*``. The
+function must be defined in the current translation unit.
+
+The argument ``%context`` is a pointer to an ``LLVMContext`` instance.
+
+The rest are arguments for :ref:`stage(0) <_stage>` parameters of
+``%function``.
+
+Semantics:
+""""""""""
+
+The intrinsic specializes the function referenced by ``%function`` argument to
+the values of vararg parameters of the intrinsic. The return value is a
+pointer to a ``Function`` object representing the IR of a staged function. The
+function is created in a new module owned by the given ``%context``.
+
+'``llvm.mix.call``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare i8* @llvm.mix.call(i8* %function, ...)
+
+Overview:
+"""""""""
+
+This intrinsic performs a static call during multi-stage compilation. Given a
+function in the source program and static values of the arguments for the
+first stage, it constructs the IR function specialized to those arguments.
+
+This intrinsic can only be used in :ref:`staged <_func_stage>` functions.
+
+Arguments:
+""""""""""
+
+The argument ``%function`` is a function identifier bitcasted to ``i8*``. The
+function must be staged and defined in the current translation unit.
+
+The rest are arguments for :ref:`stage(0) <_stage>` parameters of
+``%function``.
+
+Semantics:
+""""""""""
+
+The intrinsic specializes the function referenced by ``%function`` argument to
+the values of vararg parameters of the intrinsic. The return value is a
+pointer to a ``Function`` object representing the IR of a staged function and
+created in the module for the currently compiling stage.
 
 .. _int_trampoline:
 

@@ -173,6 +173,11 @@ Attribute Attribute::getWithStackAlignment(LLVMContext &Context, Align A) {
   return get(Context, StackAlignment, A.value());
 }
 
+Attribute Attribute::getWithStage(LLVMContext &Context, unsigned Stage){
+  assert(Stage && "Stage must be non-zero.");
+  return get(Context, Attribute::Stage, Stage);
+}
+
 Attribute Attribute::getWithDereferenceableBytes(LLVMContext &Context,
                                                 uint64_t Bytes) {
   assert(Bytes && "Bytes must be non-zero.");
@@ -334,6 +339,12 @@ MaybeAlign Attribute::getStackAlignment() const {
   return MaybeAlign(pImpl->getValueAsInt());
 }
 
+unsigned Attribute::getStage() const {
+  assert(hasAttribute(Attribute::Stage) &&
+         "Trying to get stage number from non-stage attribute!");
+  return pImpl->getValueAsInt();
+}
+
 uint64_t Attribute::getDereferenceableBytes() const {
   assert(hasAttribute(Attribute::Dereferenceable) &&
          "Trying to get dereferenceable bytes from "
@@ -411,6 +422,9 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
 
   if (hasAttribute(Attribute::DereferenceableOrNull))
     return AttrWithBytesToString("dereferenceable_or_null");
+
+  if (hasAttribute(Attribute::Stage))
+    return AttrWithBytesToString("stage");
 
   if (hasAttribute(Attribute::AllocSize)) {
     unsigned ElemSize;
@@ -680,6 +694,10 @@ MaybeAlign AttributeSet::getStackAlignment() const {
   return SetNode ? SetNode->getStackAlignment() : None;
 }
 
+unsigned AttributeSet::getStage() const {
+  return SetNode ? SetNode->getStage() : 0;
+}
+
 uint64_t AttributeSet::getDereferenceableBytes() const {
   return SetNode ? SetNode->getDereferenceableBytes() : 0;
 }
@@ -827,6 +845,9 @@ AttributeSetNode *AttributeSetNode::get(LLVMContext &C, const AttrBuilder &B) {
       assert(B.getStackAlignment() && "StackAlignment must be set");
       Attr = Attribute::getWithStackAlignment(C, *B.getStackAlignment());
       break;
+    case Attribute::Stage:
+      Attr = Attribute::getWithStage(C, B.getStage());
+      break;
     case Attribute::Dereferenceable:
       Attr = Attribute::getWithDereferenceableBytes(
           C, B.getDereferenceableBytes());
@@ -905,6 +926,13 @@ Type *AttributeSetNode::getAttributeType(Attribute::AttrKind Kind) const {
   if (auto A = findEnumAttribute(Kind))
     return A->getValueAsType();
   return nullptr;
+}
+
+unsigned AttributeSetNode::getStage() const {
+  for (Attribute I : *this)
+    if (I.hasAttribute(Attribute::Stage))
+      return I.getStage();
+  return 0;
 }
 
 uint64_t AttributeSetNode::getDereferenceableBytes() const {
@@ -1468,6 +1496,10 @@ MaybeAlign AttributeList::getFnStackAlignment() const {
   return getFnAttrs().getStackAlignment();
 }
 
+unsigned AttributeList::getStage(unsigned Index) const {
+  return getAttributes(Index).getStage();
+}
+
 MaybeAlign AttributeList::getRetStackAlignment() const {
   return getRetAttrs().getStackAlignment();
 }
@@ -1606,6 +1638,8 @@ AttrBuilder &AttrBuilder::addAttribute(Attribute Attr) {
     DerefOrNullBytes = Attr.getDereferenceableOrNullBytes();
   else if (Kind == Attribute::AllocSize)
     AllocSizeArgs = Attr.getValueAsInt();
+  else if (Kind == Attribute::Stage)
+    Stage = Attr.getStage();
   else if (Kind == Attribute::VScaleRange)
     VScaleRangeArgs = Attr.getValueAsInt();
 
@@ -1699,6 +1733,15 @@ AttrBuilder &AttrBuilder::addDereferenceableOrNullAttr(uint64_t Bytes) {
   return *this;
 }
 
+AttrBuilder &AttrBuilder::addStageAttr(unsigned Stage) {
+  if (Stage == 0)
+    return *this;
+
+  Attrs[Attribute::Stage] = true;
+  this->Stage = Stage;
+  return *this;
+}
+
 AttrBuilder &AttrBuilder::addAllocSizeAttr(unsigned ElemSize,
                                            const Optional<unsigned> &NumElems) {
   return addAllocSizeAttrFromRawRepr(packAllocSizeArgs(ElemSize, NumElems));
@@ -1773,6 +1816,9 @@ AttrBuilder &AttrBuilder::merge(const AttrBuilder &B) {
 
   if (!StackAlignment)
     StackAlignment = B.StackAlignment;
+
+  if (!Stage)
+    Stage = B.Stage;
 
   if (!DerefBytes)
     DerefBytes = B.DerefBytes;
@@ -1917,8 +1963,10 @@ AttrBuilder AttributeFuncs::typeIncompatible(Type *Ty) {
         .addTypeAttr(Attribute::ElementType, Ty);
 
   // Some attributes can apply to all "values" but there are no `void` values.
-  if (Ty->isVoidTy())
+  if (Ty->isVoidTy()) {
     Incompatible.addAttribute(Attribute::NoUndef);
+    Incompatible.addStageAttr(1); // the int here is ignored
+  }
 
   return Incompatible;
 }

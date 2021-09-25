@@ -11028,6 +11028,10 @@ bool ASTContext::DeclMustBeEmitted(const Decl *D) {
     return true;
 
   if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
+    // Mix specializers must be generated.
+    if (FD->isMixSpecializerDeclaration())
+      return true;
+
     // Forward declarations aren't required.
     if (!FD->doesThisDeclarationHaveABody())
       return FD->doesDeclarationForceExternallyVisibleDefinition();

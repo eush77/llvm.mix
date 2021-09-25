@@ -15,6 +15,7 @@ set(LLVM_LINK_COMPONENTS
   LTO
   Linker
   MC
+  Mix
   ObjCARCOpts
   Object
   Passes
@@ -51,6 +52,7 @@ add_clang_library(clangCodeGen
   CGExprScalar.cpp
   CGGPUBuiltin.cpp
   CGLoopInfo.cpp
+  CGMix.cpp
   CGNonTrivialStruct.cpp
   CGObjC.cpp
   CGObjCGNU.cpp

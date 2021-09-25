@@ -988,6 +988,20 @@ def int_eh_sjlj_setjmp          : Intrinsic<[llvm_i32_ty], [llvm_ptr_ty]>;
 def int_eh_sjlj_longjmp         : Intrinsic<[], [llvm_ptr_ty], [IntrNoReturn]>;
 def int_eh_sjlj_setup_dispatch  : Intrinsic<[], []>;
 
+//===------------------ Mixed Execution Intrinsics ------------------------===//
+//
+def int_object_stage : Intrinsic<[LLVMAnyPointerType<llvm_any_ty>],
+                                 [LLVMMatchType<0>, llvm_i32_ty],
+                                 [IntrNoMem, NoCapture<ArgIndex<0>>]>;
+
+def int_mix
+    : Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_ptr_ty, llvm_vararg_ty],
+                [IntrArgMemOnly]>;
+
+def int_mix_call
+    : Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_vararg_ty],
+                [IntrArgMemOnly]>;
+
 //===---------------- Generic Variable Attribute Intrinsics----------------===//
 //
 def int_var_annotation : DefaultAttrsIntrinsic<

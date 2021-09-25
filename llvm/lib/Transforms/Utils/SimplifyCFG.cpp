@@ -25,6 +25,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/BindingTimeAnalysis.h"
 #include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/EHPersonalities.h"
@@ -1706,6 +1707,14 @@ static bool canSinkInstructions(
       return false;
     if (!HasUse && !I->user_empty())
       return false;
+
+    // Do not sink loads or stores of pointers with object stage annotation,
+    // because that would break execution stage separation and prevent loads
+    // or stores to disappear in an earlier stage.
+    if (Value *P = getLoadStorePointerOperand(I)) {
+      if (getObjectStageAnnotation(P))
+        return false;
+    }
   }
 
   const Instruction *I0 = Insts.front();

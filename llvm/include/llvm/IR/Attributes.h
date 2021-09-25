@@ -116,6 +116,7 @@ public:
   /// alignment set.
   static Attribute getWithAlignment(LLVMContext &Context, Align Alignment);
   static Attribute getWithStackAlignment(LLVMContext &Context, Align Alignment);
+  static Attribute getWithStage(LLVMContext &Context, unsigned Stage);
   static Attribute getWithDereferenceableBytes(LLVMContext &Context,
                                               uint64_t Bytes);
   static Attribute getWithDereferenceableOrNullBytes(LLVMContext &Context,
@@ -203,6 +204,9 @@ public:
   /// Returns the stack alignment field of an attribute as a byte
   /// alignment value.
   MaybeAlign getStackAlignment() const;
+
+  /// Returns the value of a stage attribute.
+  unsigned getStage() const;
 
   /// Returns the number of dereferenceable bytes from the
   /// dereferenceable attribute.
@@ -339,6 +343,7 @@ public:
 
   MaybeAlign getAlignment() const;
   MaybeAlign getStackAlignment() const;
+  unsigned getStage() const;
   uint64_t getDereferenceableBytes() const;
   uint64_t getDereferenceableOrNullBytes() const;
   Type *getByValType() const;
@@ -795,6 +800,9 @@ public:
   /// Return the stack alignment for the specified function parameter.
   MaybeAlign getParamStackAlignment(unsigned ArgNo) const;
 
+  /// Get the value of a stage attribute.
+  unsigned getStage(unsigned Index) const;
+
   /// Return the byval type for the specified function parameter.
   Type *getParamByValType(unsigned ArgNo) const;
 
@@ -914,6 +922,7 @@ class AttrBuilder {
   uint64_t AllocSizeArgs = 0;
   uint64_t VScaleRangeArgs = 0;
   std::array<Type *, Attribute::NumTypeAttrKinds> TypeAttrs = {};
+  unsigned Stage = 0;
 
   Optional<unsigned> kindToTypeIndex(Attribute::AttrKind Kind) const;
 
@@ -1018,6 +1027,9 @@ public:
   /// Retrieve the inalloca type.
   Type *getInAllocaType() const { return getTypeAttr(Attribute::InAlloca); }
 
+  /// \brief Retrieve the binding-time stage.
+  unsigned getStage() const { return Stage; }
+
   /// Retrieve the allocsize args, if the allocsize attribute exists.  If it
   /// doesn't exist, pair(0, 0) is returned.
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;
@@ -1086,6 +1098,9 @@ public:
   /// Add an allocsize attribute, using the representation returned by
   /// Attribute.getIntValue().
   AttrBuilder &addAllocSizeAttrFromRawRepr(uint64_t RawAllocSizeRepr);
+
+  /// Add a stage attribute.
+  AttrBuilder &addStageAttr(unsigned Stage);
 
   /// Add a vscale_range attribute, using the representation returned by
   /// Attribute.getIntValue().

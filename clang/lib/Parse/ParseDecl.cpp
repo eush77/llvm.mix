@@ -885,6 +885,37 @@ void Parser::ParseNullabilityTypeSpecifiers(ParsedAttributes &attrs) {
   }
 }
 
+void Parser::ParseStageSpecifier(ParsedAttributes &Attrs, bool IsFunctionAttr) {
+  IdentifierInfo *KWName = Tok.getIdentifierInfo();
+  SourceLocation KWLoc = ConsumeToken();
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume())
+    return;
+
+  ExprResult ArgExpr = ParseConstantExpression();
+  if (ArgExpr.isInvalid()) {
+    T.skipToEnd();
+    return;
+  }
+
+  T.consumeClose();
+
+  ArgsVector ArgExprs;
+
+  if (IsFunctionAttr) {
+    ASTContext &Ctx = Actions.getASTContext();
+
+    ArgExprs.push_back(new (Ctx) IntegerLiteral(
+        Ctx, Ctx.MakeIntValue(0, Ctx.UnsignedIntTy), Ctx.UnsignedIntTy, KWLoc));
+  }
+
+  ArgExprs.push_back(ArgExpr.get());
+
+  Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), ArgExprs.size(),
+               ParsedAttr::AS_Keyword);
+}
+
 static bool VersionNumberSeparator(const char Separator) {
   return (Separator == '.' || Separator == '_');
 }
@@ -1991,6 +2022,12 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
   // These will be parsed in ParseFunctionDefinition or ParseLexedAttrList.
   LateParsedAttrList LateParsedAttrs(true);
   if (D.isFunctionDeclarator()) {
+    if (Tok.is(tok::kw___stage)) {
+      ParsedAttributes Attrs(AttrFactory);
+      ParseStageSpecifier(Attrs, true);
+      D.takeAttributes(Attrs, {});
+    }
+
     MaybeParseGNUAttributes(D, &LateParsedAttrs);
 
     // The _Noreturn keyword can't appear here, unlike the GNU noreturn
@@ -4116,6 +4153,11 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
                                  getLangOpts());
       break;
 
+    // Binding-time stage specifier.
+    case tok::kw___stage:
+      ParseStageSpecifier(DS.getAttributes());
+      continue;
+
     // OpenCL address space qualifiers:
     case tok::kw___generic:
       // generic address space is introduced only in OpenCL v2.0
@@ -4282,6 +4324,12 @@ void Parser::ParseStructDeclaration(
         SkipUntil(tok::semi, StopBeforeMatch);
       else
         DeclaratorInfo.BitfieldSize = Res.get();
+    }
+
+    if (Tok.is(tok::kw___stage)) {
+      ParsedAttributes Attrs(AttrFactory);
+      ParseStageSpecifier(Attrs);
+      DeclaratorInfo.D.takeAttributes(Attrs, {});
     }
 
     // If attributes exist after the declarator, parse them.

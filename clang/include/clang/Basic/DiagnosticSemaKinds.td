@@ -3065,6 +3065,11 @@ def err_attribute_invalid_size : Error<
   "vector size not an integral multiple of component size">;
 def err_attribute_zero_size : Error<"zero %0 size">;
 def err_attribute_size_too_large : Error<"%0 size too large">;
+def err_stage_incompatible : Error<
+  "Function stage is incompatible with the stage%select{|s}0 of its "
+  "%select{return value|arguments}0">;
+def err_stage_void : Error<
+  "__stage attribute does not apply to void return values">;
 def err_typecheck_sve_ambiguous : Error<
   "cannot combine fixed-length and sizeless SVE vectors in expression, result is ambiguous (%0 and %1)">;
 def err_typecheck_sve_gnu_ambiguous : Error<
@@ -4028,6 +4033,19 @@ def err_attribute_cleanup_func_must_take_one_arg : Error<
 def err_attribute_cleanup_func_arg_incompatible_type : Error<
   "'cleanup' function %0 parameter has "
   "%diff{type $ which is incompatible with type $|incompatible type}1,2">;
+def err_mix_arg_function
+    : Error<"'%select{mix|__builtin_mix_call}0' argument%select{| %2| %2| %2}1 "
+            "does not refer to a%select{||| staged}1 function%select{|| with a "
+            "body|}1">;
+def err_attribute_mix_return_type : Error<"Expected a pointer return type from "
+                                          "a function with 'mix' attribute">;
+def err_mix_argument_count
+    : Error<"Expected%select{| at least}2 %1 arguments %select{from a function "
+            "with 'mix' attribute|for a call to '__builtin_mix_call'}0">;
+def err_mix_argument_type : Error<
+  "Argument type does not match argument type %0 of '%1'">;
+def err_attribute_mix_context_argument_type : Error<
+  "Context argument does not have a pointer type">;
 def err_attribute_regparm_wrong_platform : Error<
   "'regparm' is not valid on this platform">;
 def err_attribute_regparm_invalid_number : Error<
@@ -5501,7 +5519,7 @@ def err_redefinition : Error<"redefinition of %0">;
 def err_alias_after_tentative :
   Error<"alias definition of %0 after tentative definition">;
 def err_alias_is_definition :
-  Error<"definition %0 cannot also be an %select{alias|ifunc}1">;
+  Error<"definition %0 cannot also be %select{an alias|an ifunc|a specializer}1">;
 def err_definition_of_implicitly_declared_member : Error<
   "definition of implicitly declared %select{default constructor|copy "
   "constructor|move constructor|copy assignment operator|move assignment "

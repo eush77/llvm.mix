@@ -2932,7 +2932,8 @@ void CodeGenModule::EmitGlobal(GlobalDecl GD) {
   // Ignore declarations, they will be emitted on their first use.
   if (const auto *FD = dyn_cast<FunctionDecl>(Global)) {
     // Forward declarations are emitted lazily on first use.
-    if (!FD->doesThisDeclarationHaveABody()) {
+    if (!FD->doesThisDeclarationHaveABody() &&
+        !FD->isMixSpecializerDeclaration()) {
       if (!FD->doesDeclarationForceExternallyVisibleDefinition())
         return;
 
@@ -4886,6 +4887,8 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD,
     AddGlobalDtor(Fn, DA->getPriority(), true);
   if (D->hasAttr<AnnotateAttr>())
     AddGlobalAnnotations(D, Fn);
+
+  SawMix |= D->isMixSpecializerDeclaration();
 }
 
 void CodeGenModule::EmitAliasDefinition(GlobalDecl GD) {

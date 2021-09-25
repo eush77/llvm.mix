@@ -62,6 +62,7 @@ enum DiagnosticKind {
   DK_DebugMetadataInvalid,
   DK_ISelFallback,
   DK_SampleProfile,
+  DK_BindingTime,
   DK_OptimizationRemark,
   DK_OptimizationRemarkMissed,
   DK_OptimizationRemarkAnalysis,

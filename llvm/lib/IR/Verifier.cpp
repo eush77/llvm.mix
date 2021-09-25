@@ -1825,6 +1825,14 @@ void Verifier::verifyParameterAttrs(AttributeSet Attrs, Type *Ty,
       }
     }
   }
+
+  if (isa<Function>(V) && !cast<Function>(V)->isStaged()) {
+    Assert(
+        !Attrs.hasAttribute(Attribute::Stage),
+        "Attribute 'stage' only applies to functions and parameters of staged "
+        "functions",
+        V);
+  }
 }
 
 void Verifier::checkUnsignedBaseTenFuncAttr(AttributeList Attrs, StringRef Attr,
@@ -1863,6 +1871,7 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
   bool SawSwiftSelf = false;
   bool SawSwiftAsync = false;
   bool SawSwiftError = false;
+  unsigned MaxArgStage = 0;
 
   // Verify return value attributes.
   AttributeSet RetAttrs = Attrs.getRetAttrs();
@@ -1930,6 +1939,8 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
       Assert(i == FT->getNumParams() - 1,
              "inalloca isn't on the last parameter!", V);
     }
+
+    MaxArgStage = std::max(MaxArgStage, ArgAttrs.getStage());
   }
 
   if (!Attrs.hasFnAttrs())
@@ -1968,6 +1979,20 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeList Attrs,
   Assert(!(Attrs.hasFnAttr(Attribute::NoInline) &&
            Attrs.hasFnAttr(Attribute::AlwaysInline)),
          "Attributes 'noinline and alwaysinline' are incompatible!", V);
+
+  Assert(Attrs.getStage(AttributeList::ReturnIndex) <=
+             Attrs.getStage(AttributeList::FunctionIndex),
+         Twine("Last stage of @") + V->getName() +
+             " is not compatible with the stage of its "
+             "return value",
+         V);
+
+  Assert((Attrs.getStage(AttributeList::FunctionIndex) == MaxArgStage ||
+          Attrs.getStage(AttributeList::FunctionIndex) == MaxArgStage + 1),
+         Twine("Last stage of @") + V->getName() +
+             " is not compatible with the stages of its "
+             "arguments",
+         V);
 
   if (Attrs.hasFnAttr(Attribute::OptimizeNone)) {
     Assert(Attrs.hasFnAttr(Attribute::NoInline),
@@ -4694,6 +4719,103 @@ void Verifier::visitIntrinsicCall(Intrinsic::ID ID, CallBase &Call) {
     Assert(isa<ConstantStruct>(Init) || isa<ConstantArray>(Init),
            "info argument of llvm.coro.id must refer to either a struct or "
            "an array");
+    break;
+  }
+  case Intrinsic::object_stage: {
+    Assert(isa<ConstantInt>(Call.getArgOperand(1)),
+           "Stage argument of llvm.object.stage must be a constant int", Call);
+    Assert(cast<ConstantInt>(Call.getArgOperand(1))->getSExtValue() >= 0,
+           "Stage argument of llvm.object.stage must be non-negative", Call);
+    break;
+  }
+  case Intrinsic::mix: {
+    auto *FID = dyn_cast<ConstantExpr>(Call.getArgOperand(0));
+    Assert(FID, "First argument of llvm.mix is not a constant expression",
+           Call);
+    Assert(FID->getOpcode() == Instruction::BitCast &&
+               isa<Function>(FID->getOperand(0)),
+           "First argument of llvm.mix is not a function identifier", Call);
+
+    auto *F = cast<Function>(FID->getOperand(0));
+    Assert(!F->isDeclaration(),
+           Twine("Function @") + F->getName() +
+               " is not defined in this module",
+           Call);
+    Assert(F->isStaged(), Twine("Function @") + F->getName() + " is not staged",
+           Call);
+
+    SmallVector<Argument*, 4> Stage0Args;
+    for (auto &A : F->args()) {
+      if (A.getStage() == 0) {
+        Stage0Args.push_back(&A);
+      }
+    }
+    Assert(Stage0Args.size() == Call.arg_size() - 2 ||
+               (Stage0Args.size() < Call.arg_size() - 2 && F->isVarArg()),
+           Twine(Stage0Args.size() < Call.arg_size() - 2 ? "Too many"
+                                                       : "Not enough") +
+               " arguments for @" + F->getName(),
+           Call);
+
+    auto M =
+        std::mismatch(Stage0Args.begin(), Stage0Args.end(), Call.arg_begin() + 2,
+                      [](const auto *A, const auto &Op) {
+                        return A->getType() == Op->getType();
+                      });
+    Assert(M.first == Stage0Args.end(),
+           "The type of argument " + Twine((M.first - Stage0Args.begin()) + 2) +
+               " does not match the type of parameter " +
+               ((*M.first)->hasName() ? Twine("%") + (*M.first)->getName()
+                                      : Twine((*M.first)->getArgNo())) +
+               " of @" + F->getName(),
+           Call);
+    break;
+  }
+  case Intrinsic::mix_call: {
+    Assert(Call.getCaller()->isStaged(),
+           "llvm.mix.call used in a non-staged function", Call);
+
+    auto *FID = dyn_cast<ConstantExpr>(Call.getArgOperand(0));
+    Assert(FID, "First argument of llvm.mix.call is not a constant expression",
+           Call);
+    Assert(FID->getOpcode() == Instruction::BitCast &&
+               isa<Function>(FID->getOperand(0)),
+           "First argument of llvm.mix.call is not a function identifier",
+           Call);
+
+    auto *F = cast<Function>(FID->getOperand(0));
+    Assert(!F->isDeclaration(),
+           Twine("Function @") + F->getName() +
+               " is not defined in this module",
+           Call);
+    Assert(F->isStaged(), Twine("Function @") + F->getName() + " is not staged",
+           Call);
+
+    SmallVector<Argument*, 4> Stage0Args;
+    for (auto &A : F->args()) {
+      if (A.getStage() == 0) {
+        Stage0Args.push_back(&A);
+      }
+    }
+    Assert(Stage0Args.size() == Call.arg_size() - 1 ||
+               (Stage0Args.size() < Call.arg_size() - 1 && F->isVarArg()),
+           Twine(Stage0Args.size() < Call.arg_size() - 1 ? "Too many"
+                                                         : "Not enough") +
+               " arguments for @" + F->getName(),
+           Call);
+
+    auto M =
+        std::mismatch(Stage0Args.begin(), Stage0Args.end(),
+                      Call.arg_begin() + 1, [](const auto *A, const auto &Op) {
+                        return A->getType() == Op->getType();
+                      });
+    Assert(M.first == Stage0Args.end(),
+           "The type of argument " + Twine((M.first - Stage0Args.begin()) + 1) +
+               " does not match the type of parameter " +
+               ((*M.first)->hasName() ? Twine("%") + (*M.first)->getName()
+                                      : Twine((*M.first)->getArgNo())) +
+               " of @" + F->getName(),
+           Call);
     break;
   }
 #define INSTRUCTION(NAME, NARGS, ROUND_MODE, INTRINSIC)                        \

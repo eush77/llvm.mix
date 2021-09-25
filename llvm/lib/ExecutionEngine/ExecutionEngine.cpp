@@ -37,8 +37,10 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <mutex>
 using namespace llvm;
 
@@ -895,6 +897,30 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
   case Type::IntegerTyID:
     Result.IntVal = cast<ConstantInt>(C)->getValue();
     break;
+  case Type::StructTyID:
+  case Type::ArrayTyID: {
+    if (!isa<ConstantData>(C)) {
+      std::transform(
+          C->op_begin(), C->op_end(), std::back_inserter(Result.AggregateVal),
+          [this](auto &E) { return getConstantValue(cast<Constant>(E)); });
+      break;
+    }
+
+    auto *CDS = dyn_cast<ConstantDataSequential>(C);
+    auto *CAZ = dyn_cast<ConstantAggregateZero>(C);
+    assert((CDS || CAZ) && "Unsupported ConstantData subclass");
+
+    unsigned NumElems =
+        CDS ? CDS->getNumElements() : CAZ->getElementCount().getFixedValue();
+
+    for (unsigned ENum = 0; ENum < NumElems; ++ENum) {
+      Constant *E =
+          CDS ? CDS->getElementAsConstant(ENum) : CAZ->getElementValue(ENum);
+
+      Result.AggregateVal.push_back(getConstantValue(E));
+    }
+    break;
+  }
   case Type::PointerTyID:
     while (auto *A = dyn_cast<GlobalAlias>(C)) {
       C = A->getAliasee();

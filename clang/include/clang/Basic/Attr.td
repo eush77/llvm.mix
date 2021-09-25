@@ -1559,6 +1559,27 @@ def MayAlias : InheritableAttr {
   let SimpleHandler = 1;
 }
 
+def Mix : Attr {
+  let Spellings = [Clang<"mix">];
+  let Args = [DeclArgument<Function, "MixedFunction">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def Stage : Attr {
+  let Spellings = [Keyword<"__stage">];
+  let Args = [UnsignedArgument<"Stage">,
+              UnsignedArgument<"FunctionStage", 1>];
+  let Subjects = SubjectList<[Function, ParmVar, Field]>;
+  let Documentation = [Undocumented];
+}
+
+def Staged : Attr {
+  let Spellings = [Clang<"staged">];
+  let Subjects = SubjectList<[Struct]>;
+  let Documentation = [Undocumented];
+}
+
 def MIGServerRoutine : InheritableAttr {
   let Spellings = [Clang<"mig_server_routine">];
   let Subjects = SubjectList<[Function, ObjCMethod, Block]>;

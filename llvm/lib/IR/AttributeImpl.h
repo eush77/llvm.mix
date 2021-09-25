@@ -250,6 +250,7 @@ public:
 
   MaybeAlign getAlignment() const;
   MaybeAlign getStackAlignment() const;
+  unsigned getStage() const;
   uint64_t getDereferenceableBytes() const;
   uint64_t getDereferenceableOrNullBytes() const;
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;

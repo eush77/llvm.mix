@@ -676,6 +676,8 @@ static uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
     return bitc::ATTR_KIND_DEREFERENCEABLE;
   case Attribute::DereferenceableOrNull:
     return bitc::ATTR_KIND_DEREFERENCEABLE_OR_NULL;
+  case Attribute::Stage:
+    return bitc::ATTR_KIND_STAGE;
   case Attribute::NoRedZone:
     return bitc::ATTR_KIND_NO_RED_ZONE;
   case Attribute::NoReturn:

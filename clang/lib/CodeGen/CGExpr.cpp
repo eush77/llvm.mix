@@ -4422,6 +4422,20 @@ LValue CodeGenFunction::EmitLValueForField(LValue base,
     FieldType = FieldType->getPointeeType();
   }
 
+  // Annotate pointer with object stage.
+  if (CurFuncDecl && CurFuncDecl->hasAttr<StageAttr>()) {
+    if (auto *SA = field->getAttr<StageAttr>()) {
+      llvm::Instruction *AnnPointer = Builder.CreateCall(
+          CGM.getIntrinsic(llvm::Intrinsic::object_stage, addr.getType()),
+          {addr.getPointer(), Builder.getInt32(SA->getStage())},
+          addr.getName());
+
+      // Set the debug location to that of the attrubute.
+      AnnPointer->setDebugLoc(SourceLocToDebugLoc(SA->getLocation()));
+      addr = {AnnPointer, addr.getAlignment()};
+    }
+  }
+
   // Make sure that the address is pointing to the right type.  This is critical
   // for both unions and structs.  A union needs a bitcast, a struct element
   // will need a bitcast if the LLVM type laid out doesn't match the desired

@@ -290,13 +290,16 @@ public:
     else
       ASTSym->setSection("__clangast");
 
+    BackendOptions BackendOpts;
+    BackendOpts.Mix = Builder->sawMix();
+
     LLVM_DEBUG({
       // Print the IR for the PCH container to the debug output.
       llvm::SmallString<0> Buffer;
       clang::EmitBackendOutput(
           Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts, LangOpts,
           Ctx.getTargetInfo().getDataLayoutString(), M.get(),
-          BackendAction::Backend_EmitLL,
+          BackendAction::Backend_EmitLL, BackendOpts,
           std::make_unique<llvm::raw_svector_ostream>(Buffer));
       llvm::dbgs() << Buffer;
     });
@@ -305,7 +308,8 @@ public:
     clang::EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
                              LangOpts,
                              Ctx.getTargetInfo().getDataLayoutString(), M.get(),
-                             BackendAction::Backend_EmitObj, std::move(OS));
+                             BackendAction::Backend_EmitObj,
+                             BackendOpts, std::move(OS));
 
     // Free the memory for the temporary buffer.
     llvm::SmallVector<char, 0> Empty;

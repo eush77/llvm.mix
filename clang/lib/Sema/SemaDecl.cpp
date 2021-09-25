@@ -2731,7 +2731,8 @@ static void checkNewAttributesAfterDef(Sema &S, Decl *New, const Decl *Old) {
   for (unsigned I = 0, E = NewAttributes.size(); I != E;) {
     const Attr *NewAttribute = NewAttributes[I];
 
-    if (isa<AliasAttr>(NewAttribute) || isa<IFuncAttr>(NewAttribute)) {
+    if (isa<AliasAttr>(NewAttribute) || isa<IFuncAttr>(NewAttribute) ||
+        isa<MixAttr>(NewAttribute)) {
       if (FunctionDecl *FD = dyn_cast<FunctionDecl>(New)) {
         Sema::SkipBodyInfo SkipBody;
         S.CheckForFunctionRedefinition(FD, cast<FunctionDecl>(Def), &SkipBody);
@@ -10011,8 +10012,17 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       CompleteMemberSpecialization(NewFD, Previous);
   }
 
+  unsigned MaxArgStage = 0;
+
   for (const ParmVarDecl *Param : NewFD->parameters()) {
     QualType PT = Param->getType();
+
+    if (auto *SA = Param->getAttr<StageAttr>()) {
+      assert(!SA->getFunctionStage() &&
+             "Function stage set on function argument");
+
+      MaxArgStage = std::max(MaxArgStage, SA->getStage());
+    }
 
     // OpenCL 2.0 pipe restrictions forbids pipe packet types to be non-value
     // types.
@@ -10025,6 +10035,19 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
           }
       }
     }
+  }
+
+  if (auto *SA = NewFD->getAttr<StageAttr>()) {
+    if (SA->getFunctionStage() < SA->getStage()) {
+      Diag(SA->getLocation(), diag::err_stage_incompatible) << 0;
+    }
+
+    if (SA->getFunctionStage() != MaxArgStage &&
+        SA->getFunctionStage() != MaxArgStage + 1) {
+      Diag(SA->getLocation(), diag::err_stage_incompatible) << 1;
+    }
+  } else if (MaxArgStage) {
+    Diag(NewFD->getLocation(), diag::err_stage_incompatible) << 1;
   }
 
   // Here we have an function template explicit specialization at class scope.
@@ -14232,6 +14255,11 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D,
   if (const auto *Attr = FD->getAttr<IFuncAttr>()) {
     Diag(Attr->getLocation(), diag::err_alias_is_definition) << FD << 1;
     FD->dropAttr<IFuncAttr>();
+    FD->setInvalidDecl();
+  }
+  if (const auto *Attr = FD->getAttr<MixAttr>()) {
+    Diag(Attr->getLocation(), diag::err_alias_is_definition) << FD << 2;
+    FD->dropAttr<MixAttr>();
     FD->setInvalidDecl();
   }
 

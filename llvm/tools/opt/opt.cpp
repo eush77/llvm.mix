@@ -52,6 +52,7 @@
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Coroutines.h"
+#include "llvm/Transforms/Mix.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/IPO/WholeProgramDevirt.h"
@@ -257,6 +258,11 @@ static cl::opt<bool> Coroutines(
   cl::desc("Enable coroutine passes."),
   cl::init(false), cl::Hidden);
 
+static cl::opt<bool> Mix(
+  "enable-mix",
+  cl::desc("Enable LLVMMix pass."),
+  cl::init(false), cl::Hidden);
+
 static cl::opt<bool> TimeTrace(
     "time-trace",
     cl::desc("Record time trace"));
@@ -372,6 +378,9 @@ static void AddOptimizationPasses(legacy::PassManagerBase &MPM,
 
   if (Coroutines)
     addCoroutinePassesToExtensionPoints(Builder);
+
+  if (Mix)
+    addMixPass(Builder);
 
   switch (PGOKindFlag) {
   case InstrGen:
@@ -536,6 +545,7 @@ int main(int argc, char **argv) {
   PassRegistry &Registry = *PassRegistry::getPassRegistry();
   initializeCore(Registry);
   initializeCoroutines(Registry);
+  initializeMixPass(Registry);
   initializeScalarOpts(Registry);
   initializeObjCARCOpts(Registry);
   initializeVectorization(Registry);

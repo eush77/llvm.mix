@@ -500,7 +500,7 @@ ExternalSourceSymbolAttr *Decl::getExternalSourceSymbolAttr() const {
 
 bool Decl::hasDefiningAttr() const {
   return hasAttr<AliasAttr>() || hasAttr<IFuncAttr>() ||
-         hasAttr<LoaderUninitializedAttr>();
+         hasAttr<LoaderUninitializedAttr>() || hasAttr<MixAttr>();
 }
 
 const Attr *Decl::getDefiningAttr() const {
@@ -510,6 +510,8 @@ const Attr *Decl::getDefiningAttr() const {
     return IFA;
   if (auto *NZA = getAttr<LoaderUninitializedAttr>())
     return NZA;
+  if (auto *MA = getAttr<MixAttr>())
+    return MA;
   return nullptr;
 }
 

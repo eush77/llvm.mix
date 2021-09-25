@@ -697,6 +697,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(sanitize_thread);
   KEYWORD(sanitize_memory);
   KEYWORD(speculative_load_hardening);
+  KEYWORD(stage);
   KEYWORD(swifterror);
   KEYWORD(swiftself);
   KEYWORD(swiftasync);

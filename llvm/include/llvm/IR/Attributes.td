@@ -263,6 +263,9 @@ def SanitizeMemTag : EnumAttr<"sanitize_memtag", [FnAttr]>;
 def SpeculativeLoadHardening : EnumAttr<"speculative_load_hardening",
                                         [FnAttr]>;
 
+/// Binding-time stage.
+def Stage : IntAttr<"stage", [FnAttr, ParamAttr, RetAttr]>;
+
 /// Argument is swift error.
 def SwiftError : EnumAttr<"swifterror", [ParamAttr]>;
 

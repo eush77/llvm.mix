@@ -2870,6 +2870,9 @@ private:
   void ParseOpenCLQualifiers(ParsedAttributes &Attrs);
   void ParseNullabilityTypeSpecifiers(ParsedAttributes &attrs);
 
+  void ParseStageSpecifier(ParsedAttributes &Attrs,
+                           bool IsFunctionAttr = false);
+
   VersionTuple ParseVersionTuple(SourceRange &Range);
   void ParseAvailabilityAttribute(IdentifierInfo &Availability,
                                   SourceLocation AvailabilityLoc,

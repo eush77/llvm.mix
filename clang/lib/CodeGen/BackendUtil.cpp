@@ -75,6 +75,7 @@
 #include "llvm/Transforms/Instrumentation/MemorySanitizer.h"
 #include "llvm/Transforms/Instrumentation/SanitizerCoverage.h"
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
+#include "llvm/Transforms/Mix.h"
 #include "llvm/Transforms/ObjCARC.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/EarlyCSE.h"
@@ -105,6 +106,7 @@ class EmitAssemblyHelper {
   const CodeGenOptions &CodeGenOpts;
   const clang::TargetOptions &TargetOpts;
   const LangOptions &LangOpts;
+  const BackendOptions &BackendOpts;
   Module *TheModule;
 
   Timer CodeGenerationTime;
@@ -152,9 +154,10 @@ public:
                      const HeaderSearchOptions &HeaderSearchOpts,
                      const CodeGenOptions &CGOpts,
                      const clang::TargetOptions &TOpts,
-                     const LangOptions &LOpts, Module *M)
+                     const LangOptions &LOpts, const BackendOptions &BOpts,
+                     Module *M)
       : Diags(_Diags), HSOpts(HeaderSearchOpts), CodeGenOpts(CGOpts),
-        TargetOpts(TOpts), LangOpts(LOpts), TheModule(M),
+        TargetOpts(TOpts), LangOpts(LOpts), BackendOpts(BOpts), TheModule(M),
         CodeGenerationTime("codegen", "Code Generation Time") {}
 
   ~EmitAssemblyHelper() {
@@ -743,6 +746,9 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
     PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                            addMemProfilerPasses);
   }
+
+  if (BackendOpts.Mix)
+    addMixPass(PMBuilder);
 
   if (LangOpts.Sanitize.has(SanitizerKind::LocalBounds)) {
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
@@ -1628,7 +1634,7 @@ void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
                               const clang::TargetOptions &TOpts,
                               const LangOptions &LOpts,
                               StringRef TDesc, Module *M,
-                              BackendAction Action,
+                              BackendAction Action, const BackendOptions &BOpts,
                               std::unique_ptr<raw_pwrite_stream> OS) {
 
   llvm::TimeTraceScope TimeScope("Backend");
@@ -1670,7 +1676,8 @@ void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
     }
   }
 
-  EmitAssemblyHelper AsmHelper(Diags, HeaderOpts, CGOpts, TOpts, LOpts, M);
+  EmitAssemblyHelper AsmHelper(Diags, HeaderOpts, CGOpts, TOpts, LOpts, BOpts,
+                               M);
 
   if (!CGOpts.LegacyPassManager)
     AsmHelper.EmitAssemblyWithNewPassManager(Action, std::move(OS));

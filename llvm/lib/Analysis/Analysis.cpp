@@ -22,6 +22,7 @@ void llvm::initializeAnalysis(PassRegistry &Registry) {
   initializeAAEvalLegacyPassPass(Registry);
   initializeAliasSetPrinterPass(Registry);
   initializeBasicAAWrapperPassPass(Registry);
+  initializeBindingTimeAnalysisPass(Registry);
   initializeBlockFrequencyInfoWrapperPassPass(Registry);
   initializeBranchProbabilityInfoWrapperPassPass(Registry);
   initializeCallGraphWrapperPassPass(Registry);

@@ -1302,6 +1302,120 @@ static void handleTestTypestateAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   D->addAttr(::new (S.Context) TestTypestateAttr(S.Context, AL, TestState));
 }
 
+static void handleMixAttr(Sema &S, FunctionDecl *D, const ParsedAttr &AL) {
+  if (checkAttrMutualExclusion<MixAttr>(S, D, AL))
+    return;
+
+  Expr *E = AL.getArgAsExpr(0);
+  FunctionDecl *FD;
+
+  if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+    if (!(FD = dyn_cast<FunctionDecl>(DRE->getDecl()))) {
+      S.Diag(E->getExprLoc(), diag::err_mix_arg_function)
+          << 0 << 1 << DRE->getNameInfo().getName();
+      return;
+    }
+    if (!FD->hasBody()) {
+      S.Diag(E->getExprLoc(), diag::err_mix_arg_function)
+          << 0 << 2 << DRE->getNameInfo().getName();
+      return;
+    }
+    if (!FD->hasAttr<StageAttr>() ||
+        !FD->getAttr<StageAttr>()->getFunctionStage()) {
+      S.Diag(E->getExprLoc(), diag::err_mix_arg_function)
+          << 0 << 3 << DRE->getNameInfo().getName();
+      return;
+    }
+  } else {
+    S.Diag(E->getExprLoc(), diag::err_mix_arg_function) << 0 << 0;
+    return;
+  }
+
+  if (!D->getReturnType()->isPointerType()) {
+    S.Diag(D->getReturnTypeSourceRange().getBegin(),
+           diag::err_attribute_mix_return_type);
+    return;
+  }
+
+  SmallVector<ParmVarDecl *, 4> Stage0Params;
+  std::copy_if(FD->param_begin(), FD->param_end(),
+               std::back_inserter(Stage0Params), [](const ParmVarDecl *PVD) {
+                 return !PVD->hasAttr<StageAttr>() ||
+                        !PVD->getAttr<StageAttr>()->getStage();
+               });
+
+  if ((!FD->isVariadic() && D->param_size() != 1 + Stage0Params.size()) ||
+      (FD->isVariadic() && D->param_size() < 1 + Stage0Params.size())) {
+    S.Diag(D->getSourceRange().getBegin(), diag::err_mix_argument_count)
+        << 0 << static_cast<unsigned>(1 + Stage0Params.size())
+        << FD->isVariadic();
+    return;
+  }
+
+  if (!D->getParamDecl(0)->getType()->isPointerType()) {
+    S.Diag(D->getParamDecl(0)->getSourceRange().getBegin(),
+           diag::err_attribute_mix_context_argument_type);
+    return;
+  }
+
+  auto M = std::mismatch(Stage0Params.begin(), Stage0Params.end(),
+                         D->param_begin() + 1, [](auto *Left, auto *Right) {
+                           return Left->getType() == Right->getType();
+                         });
+
+  if (M.first != Stage0Params.end()) {
+    S.Diag((*M.second)->getSourceRange().getBegin(),
+           diag::err_mix_argument_type)
+        << (*M.first)->getType() << FD->getName();
+    return;
+  }
+
+  D->addAttr(::new (S.Context) MixAttr(S.Context, AL, FD));
+}
+
+static void handleStagedAttr(Sema &S, RecordDecl *D, const ParsedAttr &AL) {
+  for (FieldDecl *FD : D->fields()) {
+    FD->addAttr(::new (S.Context) StageAttr(S.Context, AL, 0, 0));
+  }
+}
+
+static void handleStageAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  int Stage;
+  int FunctionStage = 0;
+
+  if (!checkPositiveIntArgument(S, AL, AL.getArgAsExpr(0), Stage))
+    return;
+
+  if (AL.getNumArgs() > 1 &&
+      !checkPositiveIntArgument(S, AL, AL.getArgAsExpr(1), FunctionStage))
+    return;
+
+  if (auto *FD = dyn_cast<FunctionDecl>(D)) {
+    if (Stage && FD->getReturnType()->isVoidType()) {
+      S.Diag(AL.getLoc(), diag::err_stage_void);
+      return;
+    }
+  } else if (auto *FD = dyn_cast<FieldDecl>(D)) {
+    // Set the StagedAttr implicitly on the record itself.
+    handleStagedAttr(S, FD->getParent(), AL);
+  }
+
+  if (auto *SA = D->getAttr<StageAttr>()) {
+    if ((Stage && SA->getStage()) ||
+        (FunctionStage && SA->getFunctionStage())) {
+      S.Diag(D->getLocation(), diag::err_attribute_only_once_per_parameter)
+          << AL.getAttrName();
+      return;
+    }
+
+    Stage |= SA->getStage();
+    FunctionStage |= SA->getFunctionStage();
+    D->dropAttr<StageAttr>();
+  }
+
+  D->addAttr(::new (S.Context) StageAttr(S.Context, AL, Stage, FunctionStage));
+}
+
 static void handleExtVectorTypeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Remember this typedef decl, we will need it later for diagnostics.
   S.ExtVectorDecls.push_back(cast<TypedefNameDecl>(D));
@@ -8412,6 +8526,17 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case ParsedAttr::AT_TestTypestate:
     handleTestTypestateAttr(S, D, AL);
+    break;
+
+  // Mixed execution attributes.
+  case ParsedAttr::AT_Mix:
+    handleMixAttr(S, cast<FunctionDecl>(D), AL);
+    break;
+  case ParsedAttr::AT_Stage:
+    handleStageAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_Staged:
+    handleStagedAttr(S, cast<RecordDecl>(D), AL);
     break;
 
   // Type safety attributes.

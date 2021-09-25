@@ -1,0 +1,105 @@
+//===-- CAPIFunctions.def - C API Function Definitions ----------*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file defines the C API functions used by the StagedIRBuilder.
+//
+//===----------------------------------------------------------------------===//
+
+// HANDLE_API_FUNCTION defines the API function and its return and parameter
+// types.
+//
+// NAME is the name of the function, unquoted and unprefixed (without "LLVM").
+//
+// RESULT is the return type, the rest of the macro arguments are parameter
+// types.
+#ifndef HANDLE_API_FUNCTION
+#define HANDLE_API_FUNCTION(Name, Result, ...)
+#endif
+
+// CONTEXT must be a reference to an LLVMContext instance.
+#ifndef CONTEXT
+#error "CONTEXT must be defined"
+#endif
+
+// C types
+#define CHAR_PTR mix::getCharPtrTy(CONTEXT)
+#define DOUBLE mix::getDoubleTy(CONTEXT)
+#define UINT mix::getUnsignedIntTy(CONTEXT)
+#define ULLINT mix::getUnsignedLongLongIntTy(CONTEXT)
+#define VOID Type::getVoidTy(CONTEXT)
+
+// LLVM C types
+#define LLVMBOOL mix::getBoolTy(CONTEXT)
+#define LLVMLINKAGE mix::getLinkageTy(CONTEXT)
+
+// LLVM IR types
+#define IR_BASICBLOCK mix::getBasicBlockPtrTy(CONTEXT)
+#define IR_BUILDER mix::getBuilderPtrTy(CONTEXT)
+#define IR_CONTEXT mix::getContextPtrTy(CONTEXT)
+#define IR_METADATA mix::getMetadataPtrTy(CONTEXT)
+#define IR_MODULE mix::getModulePtrTy(CONTEXT)
+#define IR_TYPE mix::getTypePtrTy(CONTEXT)
+#define IR_VALUE mix::getValuePtrTy(CONTEXT)
+
+//
+// Function definitions
+//
+
+HANDLE_API_FUNCTION(AddCase, VOID, IR_VALUE, IR_VALUE, IR_BASICBLOCK)
+HANDLE_API_FUNCTION(AddFunction, IR_VALUE, IR_MODULE, CHAR_PTR, IR_TYPE)
+HANDLE_API_FUNCTION(AddIncoming, VOID, IR_VALUE, IR_VALUE->getPointerTo(),
+                    IR_BASICBLOCK->getPointerTo(), UINT)
+HANDLE_API_FUNCTION(AppendBasicBlockInContext, IR_BASICBLOCK, IR_CONTEXT,
+                    IR_VALUE, CHAR_PTR)
+HANDLE_API_FUNCTION(ArrayType, IR_TYPE, IR_TYPE, UINT)
+HANDLE_API_FUNCTION(ConstBitCast, IR_VALUE, IR_VALUE, IR_TYPE)
+HANDLE_API_FUNCTION(ConstInt, IR_VALUE, IR_TYPE, ULLINT, LLVMBOOL)
+HANDLE_API_FUNCTION(ConstIntOfArbitraryPrecision, IR_VALUE, IR_TYPE, UINT,
+                    ULLINT->getPointerTo())
+HANDLE_API_FUNCTION(ConstIntToPtr, IR_VALUE, IR_VALUE, IR_TYPE)
+HANDLE_API_FUNCTION(ConstNamedStruct, IR_VALUE, IR_TYPE,
+                    IR_VALUE->getPointerTo(), UINT)
+HANDLE_API_FUNCTION(ConstReal, IR_VALUE, IR_TYPE, DOUBLE)
+HANDLE_API_FUNCTION(ConstStructInContext, IR_VALUE, IR_CONTEXT,
+                    IR_VALUE->getPointerTo(), UINT, LLVMBOOL)
+HANDLE_API_FUNCTION(CreateBuilderInContext, IR_BUILDER, IR_CONTEXT)
+HANDLE_API_FUNCTION(BuildPointerCast, IR_VALUE, IR_BUILDER, IR_VALUE, IR_TYPE,
+                    CHAR_PTR)
+HANDLE_API_FUNCTION(DisposeBuilder, VOID, IR_BUILDER)
+HANDLE_API_FUNCTION(DoubleTypeInContext, IR_TYPE, IR_CONTEXT)
+HANDLE_API_FUNCTION(FloatTypeInContext, IR_TYPE, IR_CONTEXT)
+HANDLE_API_FUNCTION(FP128TypeInContext, IR_TYPE, IR_CONTEXT)
+HANDLE_API_FUNCTION(FunctionType, IR_TYPE, IR_TYPE, IR_TYPE->getPointerTo(),
+                    UINT, LLVMBOOL)
+HANDLE_API_FUNCTION(GetMDKindIDInContext, UINT, IR_CONTEXT, CHAR_PTR, UINT)
+HANDLE_API_FUNCTION(GetParam, IR_VALUE, IR_VALUE, UINT)
+HANDLE_API_FUNCTION(GetUndef, IR_VALUE, IR_TYPE)
+HANDLE_API_FUNCTION(HalfTypeInContext, IR_TYPE, IR_CONTEXT)
+HANDLE_API_FUNCTION(IntTypeInContext, IR_TYPE, IR_CONTEXT, UINT)
+HANDLE_API_FUNCTION(MetadataAsValue, IR_VALUE, IR_CONTEXT, IR_METADATA)
+HANDLE_API_FUNCTION(MetadataTypeInContext, IR_TYPE, IR_CONTEXT)
+HANDLE_API_FUNCTION(MDNodeInContext, IR_VALUE, IR_CONTEXT,
+                    IR_VALUE->getPointerTo(), UINT)
+HANDLE_API_FUNCTION(MDStringInContext, IR_VALUE, IR_CONTEXT, CHAR_PTR, UINT)
+HANDLE_API_FUNCTION(ModuleCreateWithNameInContext, IR_MODULE, CHAR_PTR,
+                    IR_CONTEXT)
+HANDLE_API_FUNCTION(PointerType, IR_TYPE, IR_TYPE, UINT)
+HANDLE_API_FUNCTION(PositionBuilderAtEnd, VOID, IR_BUILDER, IR_BASICBLOCK)
+HANDLE_API_FUNCTION(PPCFP128TypeInContext, IR_TYPE, IR_CONTEXT)
+HANDLE_API_FUNCTION(SetLinkage, VOID, IR_VALUE, LLVMLINKAGE)
+HANDLE_API_FUNCTION(SetMetadata, VOID, IR_VALUE, UINT, IR_VALUE)
+HANDLE_API_FUNCTION(SetValueName, VOID, IR_VALUE, CHAR_PTR)
+HANDLE_API_FUNCTION(StructCreateNamed, IR_TYPE, IR_CONTEXT, CHAR_PTR)
+HANDLE_API_FUNCTION(StructSetBody, VOID, IR_TYPE, IR_TYPE->getPointerTo(), UINT,
+                    LLVMBOOL)
+HANDLE_API_FUNCTION(StructTypeInContext, IR_TYPE, IR_CONTEXT,
+                    IR_TYPE->getPointerTo(), UINT, LLVMBOOL)
+HANDLE_API_FUNCTION(ValueAsMetadata, IR_METADATA, IR_VALUE)
+HANDLE_API_FUNCTION(VoidTypeInContext, IR_TYPE, IR_CONTEXT)
+HANDLE_API_FUNCTION(X86FP80TypeInContext, IR_TYPE, IR_CONTEXT)

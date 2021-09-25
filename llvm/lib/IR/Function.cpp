@@ -223,6 +223,10 @@ Type *Argument::getParamInAllocaType() const {
   return getParent()->getParamInAllocaType(getArgNo());
 }
 
+unsigned Argument::getStage() const {
+  return getParent()->getParamStage(getArgNo());
+}
+
 uint64_t Argument::getDereferenceableBytes() const {
   assert(getType()->isPointerTy() &&
          "Only pointers have dereferenceable bytes");
@@ -871,6 +875,11 @@ static std::string getMangledTypeStr(Type *Ty, bool &HasUnnamedType) {
   return Result;
 }
 
+std::string Type::getMangledTypeStr() {
+  bool HasUnnamedType;
+  return ::getMangledTypeStr(this, HasUnnamedType);
+}
+
 StringRef Intrinsic::getBaseName(ID id) {
   assert(id < num_intrinsics && "Invalid intrinsic ID!");
   return IntrinsicNameTable[id];
@@ -1367,6 +1376,7 @@ bool Intrinsic::isLeaf(ID id) {
   case Intrinsic::experimental_gc_statepoint:
   case Intrinsic::experimental_patchpoint_void:
   case Intrinsic::experimental_patchpoint_i64:
+  case Intrinsic::mix_call:
     return false;
   }
 }

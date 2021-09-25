@@ -1315,6 +1315,13 @@ bool LLParser::parseEnumAttribute(Attribute::AttrKind Attr, AttrBuilder &B,
     B.addDereferenceableOrNullAttr(Bytes);
     return false;
   }
+  case Attribute::Stage: {
+    unsigned StageNum;
+    if (parseOptionalStage(StageNum, InAttrGroup))
+      return true;
+    B.addStageAttr(StageNum);
+    return false;
+  }
   default:
     B.addAttribute(Attr);
     Lex.Lex();
@@ -1975,6 +1982,28 @@ bool LLParser::parseOptionalDerefAttrBytes(lltok::Kind AttrKind,
     return error(ParenLoc, "expected ')'");
   if (!Bytes)
     return error(DerefLoc, "dereferenceable bytes must be non-zero");
+  return false;
+}
+
+/// parseOptionalStage
+///   ::= /* empty */
+///   ::= stage '(' 4 ')'
+///   ::= stage '=' 4
+bool LLParser::parseOptionalStage(unsigned &StageNum, bool InAttrGrp) {
+  StageNum = 0;
+  if (!EatIfPresent(lltok::kw_stage))
+    return false;
+  LocTy Loc = Lex.getLoc();
+  if (!EatIfPresent(InAttrGrp ? lltok::equal : lltok::lparen))
+    return error(Loc, InAttrGrp ? "expected '='" : "expected '('");
+  {
+    uint32_t Val;
+    if (parseUInt32(Val)) return true;
+    StageNum = Val;
+  }
+  Loc = Lex.getLoc();
+  if (!InAttrGrp && !EatIfPresent(lltok::rparen))
+    return error(Loc, "expected ')'");
   return false;
 }
 
