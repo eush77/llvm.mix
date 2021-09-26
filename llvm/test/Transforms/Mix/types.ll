@@ -112,6 +112,19 @@ define %struct @struct.named() stage(1) {
   ret %struct { i32 1, i32 2 }
 }
 
+%struct.recursive = type { i8, void (%struct.recursive*)* }
+
+; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @struct.recursive.main(%struct.LLVMOpaqueContext* %context)
+; STAGE1-LABEL: source_filename = "struct.recursive.module"
+define %struct.recursive @struct.recursive() stage(1) {
+  ; STAGE0: LLVMStructCreateNamed
+  ; STAGE0: LLVMStructSetBody
+  ; STAGE1: %struct.recursive = type { i8, void (%struct.recursive*)* }
+  ; STAGE1: define dso_local %struct.recursive @struct.recursive()
+  ; STAGE1: ret %struct.recursive { i8 1, void (%struct.recursive*)* null }
+  ret %struct.recursive { i8 1, void (%struct.recursive*)* null }
+}
+
 declare i32 @llvm.read_register.i32(metadata)
 
 ; STAGE0-LABEL: define private %struct.LLVMOpaqueValue* @metadata.main(%struct.LLVMOpaqueContext* %context)
@@ -152,6 +165,9 @@ define void @main() {
   %struct.named = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (%struct ()* @struct.named to i8*), i8* %c)
   %struct.named.m = call i8* @LLVMGetGlobalParent(i8* %struct.named)
   call void @LLVMDumpModule(i8* %struct.named.m)
+  %struct.recursive = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (%struct.recursive ()* @struct.recursive to i8*), i8* %c)
+  %struct.recursive.m = call i8* @LLVMGetGlobalParent(i8* %struct.recursive)
+  call void @LLVMDumpModule(i8* %struct.recursive.m)
   %metadata = call i8* (i8*, i8*, ...) @llvm.mix(i8* bitcast (i32 ()* @metadata to i8*), i8* %c)
   %metadata.m = call i8* @LLVMGetGlobalParent(i8* %metadata)
   call void @LLVMDumpModule(i8* %metadata.m)

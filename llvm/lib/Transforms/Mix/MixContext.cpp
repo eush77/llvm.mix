@@ -327,20 +327,22 @@ Value *MixContextTable::buildType(Type *Ty) {
 
   case Type::StructTyID: {
     auto *ST = cast<StructType>(Ty);
-    Value *Elements;
 
-    if (ST->getNumElements()) {
-      Elements = B->CreateAlloca(getTypePtrTy(B->getContext()),
-                                 B->getInt32(ST->getNumElements()));
+    auto buildElements = [&]() -> Value * {
+      if (!ST->getNumElements())
+        return ConstantPointerNull::get(
+            PointerType::getUnqual(getTypePtrTy(B->getContext())));
+
+      auto *Elements = B->CreateAlloca(getTypePtrTy(B->getContext()),
+                                       B->getInt32(ST->getNumElements()));
 
       for (unsigned ElNum = 0; ElNum < ST->getNumElements(); ++ElNum) {
         B->CreateStore(buildType(ST->getElementType(ElNum)),
                        B->CreateGEP(Elements, B->getInt32(ElNum)));
       }
-    } else {
-      Elements = ConstantPointerNull::get(
-          PointerType::getUnqual(getTypePtrTy(B->getContext())));
-    }
+
+      return Elements;
+    };
 
     if (ST->hasName()) {
       V = B->CreateCall(
@@ -352,7 +354,7 @@ Value *MixContextTable::buildType(Type *Ty) {
       if (!ST->isOpaque()) {
         B->CreateCall(
             getStructSetBodyFn(getModule()),
-            {V, Elements,
+            {V, buildElements(),
              ConstantInt::get(getUnsignedIntTy(B->getContext()),
                               ST->getNumElements()),
              ConstantInt::get(getBoolTy(B->getContext()), ST->isPacked())});
@@ -360,7 +362,7 @@ Value *MixContextTable::buildType(Type *Ty) {
     } else {
       V = B->CreateCall(
           getStructTypeInContextFn(getModule()),
-          {buildContext(), Elements,
+          {buildContext(), buildElements(),
            ConstantInt::get(getUnsignedIntTy(B->getContext()),
                             ST->getNumElements()),
            ConstantInt::get(getBoolTy(B->getContext()), ST->isPacked())},
