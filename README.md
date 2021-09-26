@@ -1,3 +1,62 @@
+# llvm.mix
+
+LLVM.Mix is a multi-stage specializer generator built as an extension to
+LLVM/Clang compiler.
+
+## Build
+
+As the project is a fork of [LLVM], the usual LLVM build procedure applies
+(see "The LLVM Compiler Infrastructure" below).
+
+Invoke CMake with `-DLLVM_ENABLE_PROJECTS=clang` to build a working Clang
+compiler with llvm.mix support.
+
+[LLVM]: https://github.com/llvm/llvm-project
+
+## Usage
+
+The extension has three main components: binding-time analysis, specializer
+generation pass, and Clang frontend.
+
+To print the IR after specializer generation, just use `-emit-llvm` on a
+source using the extension:
+
+    $ clang -S -emit-llvm -O1 tmp.c
+
+To print results of the binding-time analysis for functions annotated with
+`stage` attributes, use `opt -analyze`:
+
+    $ opt -enable-new-pm=0 -analyze -bta tmp.ll
+
+To generate specializer for the code containing the calls to `@llvm.mix`
+intrinsic, include Mix pass in the pipeline:
+
+    $ opt -enable-new-pm=0 -S -mix tmp.ll
+
+Please refer to my [presentation][fosdem] and [mix-examples] repository for
+more info. Test directories ([BTA][bta-tests], [Mix][mix-tests]) may serve as
+something like a starting point as well.
+
+## Test
+
+The `check` target by default includes all of the LLVM.Mix tests.
+
+Use `check-llvm-analysis-bindingtimeanalysis` and `check-llvm-transforms-mix`
+targets to run the test suites separately.
+
+Specializer test suite (`check-llvm-transforms-mix`) needs FFI (disabled by
+default). Pass `-DLLVM_ENABLE_FFI=On` to CMake to enable it.
+
+## Links
+
+- [Presentation at FOSDEM 2019][fosdem]
+- [Examples and micro benchmarks][mix-examples]
+
+[fosdem]: https://fosdem.org/2019/schedule/event/llvm_mix/
+[mix-examples]: https://github.com/eush77/mix-examples
+[bta-tests]: https://github.com/eush77/llvm.mix/blob/mix/llvm/test/Analysis/BindingTimeAnalysis/
+[mix-tests]: https://github.com/eush77/llvm.mix/blob/mix/llvm/test/Transforms/Mix/
+
 # The LLVM Compiler Infrastructure
 
 This directory and its sub-directories contain source code for LLVM,
