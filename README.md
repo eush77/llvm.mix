@@ -21,7 +21,7 @@ generation pass, and Clang frontend.
 To print the IR after specializer generation, just use `-emit-llvm` on a
 source using the extension:
 
-    $ clang -S -emit-llvm -O1 tmp.c
+    $ clang -flegacy-pass-manager -S -emit-llvm -O1 tmp.c
 
 To print results of the binding-time analysis for functions annotated with
 `stage` attributes, use `opt -analyze`:
