@@ -1,22 +1,16 @@
-; XFAIL: *
-
 ; RUN: opt -S -enable-new-pm=0 -mix %s | FileCheck %s --check-prefix=STAGE0
 ; RUN: opt -S -enable-new-pm=0 -mix %s | lli -force-interpreter 2>&1 \
 ; RUN: | FileCheck %s --check-prefix=STAGE1
 ; RUN: opt -S -enable-new-pm=0 -mix %s | lli -force-interpreter | opt -verify -disable-output
 
-; STAGE0-LABEL: define {{.*}} @f.mix
-; STAGE1-LABEL: define {{.*}} @f
-define void @f(i32 %n, i32 stage(1) %x) stage(1) {
+; STAGE0-LABEL: define {{.*}} @instruction_metadata.mix
+; STAGE1-LABEL: define {{.*}} @instruction_metadata
+define void @instruction_metadata(i32 %n, i32 stage(1) %x) stage(1) {
   ; STAGE0: %m = add i32 %n, 1, !name !0, !void !1
   %m = add i32 %n, 1, !name !0, !void !1
   ; STAGE0: @LLVMSetMetadata
-  ; STAGE1: %y = add i32 %x, 5, !name !0, !void !1
+  ; STAGE1: %y = add i32 %x, 5, !name [[m2:![0-9]]], !void [[m1:![0-9]]]
   %y = add i32 %x, %m, !name !2, !void !1
-  %x.addr = alloca i32
-  store i32 %x, i32* %x.addr, align 4
-  call void @llvm.dbg.declare(metadata i32* %x.addr, metadata !10, metadata !DIExpression()), !dbg !11
-  call void @non_domination(i32 %n, i32 %x)
   ret void
 }
 
@@ -27,7 +21,7 @@ define void @f(i32 %n, i32 stage(1) %x) stage(1) {
 define void @non_domination(i32 %n, i32 stage(1) %x) stage(1) {
   %b = icmp eq i32 %n, 1
   br i1 %b, label %left, label %right
-  ; STAGE1: ret void, !meta !2
+  ; STAGE1: ret void, !meta [[m0:![0-9]]]
 
 ; STAGE0: {{^}}right:
 right:
@@ -42,23 +36,23 @@ left:
   ret void, !meta !0
 }
 
-!0 = !{!"m"}                    ; STAGE0: !0 = !{!"m"}
-!1 = !{}                        ; STAGE0: !1 = !{}
-!2 = !{!"y"}                    ; STAGE1: !0 = !{!"y"}
-; STAGE1: !1 = !{}
+; STAGE0: !0 = !{!"m"}
+; STAGE1-DAG: [[m0]] = !{!"m"}
+!0 = !{!"m"}
 
-!llvm.module.flags = !{!3}
-!3 = !{i32 2, !"Debug Info Version", i32 3}
-!4 = !DIFile(filename: "metadata.ll", directory: "llvm/test/Transforms/Mix")
-!5 = distinct !DICompileUnit(language: DW_LANG_C99, file: !4, producer: "clang", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, nameTableKind: None)
-!6 = !DIBasicType(name: "int", size: 32, encoding: DW_ATE_signed)
-!7 = !{null, !6, !6}
-!8 = !DISubroutineType(types: !7)
-!9 = distinct !DISubprogram(name: "f", scope: !4, file: !4, line: 1, type: !8, scopeLine: 1, flags: DIFlagPrototyped, spFlags: DISPFlagDefinition, unit: !5, retainedNodes: !1)
-!10 = !DILocalVariable(name: "x", arg: 2, scope: !9, file: !4, line: 1, type: !6)
-!11 = !DILocation(line: 1, column: 37, scope: !9)
+; STAGE0: !1 = !{}
+; STAGE1-DAG: [[m1]] = !{}
+!1 = !{}
 
-declare void @llvm.dbg.declare(metadata, metadata, metadata)
+; STAGE0: !2 = !{!"y"}
+; STAGE1-DAG: [[m2]] = !{!"y"}
+!2 = !{!"y"}
+
+define void @f(i32 %n, i32 stage(1) %x) stage(1) {
+  call void @instruction_metadata(i32 %n, i32 %x)
+  call void @non_domination(i32 %n, i32 %x)
+  ret void
+}
 
 define void @main() {
   %c = call i8* @LLVMContextCreate()
