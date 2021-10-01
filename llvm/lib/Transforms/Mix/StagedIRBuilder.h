@@ -582,7 +582,6 @@ Instruction *StagedIRBuilder<IRBuilder>::stageInstruction(Instruction *I) {
   if (auto *Switch = dyn_cast<SwitchInst>(I))
     stageSwitchCases(SI, Switch);
 
-  stageInstructionMetadata(SI, I);
   return SI;
 }
 
@@ -737,6 +736,7 @@ Instruction *StagedIRBuilder<IRBuilder>::defineStatic(Instruction *I,
   assert(!isa<PHINode>(I) && "Static PHI nodes require an explicit type");
 
   SI = B.Insert(I->clone(), I->getName());
+  SI->dropUndefImplyingAttrsAndUnknownMetadata();
 
   // Remap operands.
   for (Use &Op : SI->operands()) {
